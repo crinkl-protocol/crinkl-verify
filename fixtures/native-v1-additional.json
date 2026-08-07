@@ -1,0 +1,64 @@
+{
+  "sourceCommit": "d81a68a47170a3fd23712504dece25e38f18b1d8",
+  "cases": [
+    {
+      "id": "token.spendAttestation.portableV1.corrected.storeDateTotal",
+      "token": {
+        "tokenType": "SPEND_ATTESTATION",
+        "schemaVersion": 1,
+        "spendId": "spend-2",
+        "canonical": {
+          "status": "CORRECTED",
+          "storeHash": "sha256:75e79abea7e5832bd50d9a88790db9740e6dea67dd9346f96281131f290e4cfa",
+          "timestamp": "2024-02-02T01:02:03.000Z",
+          "date": "2024-02-02",
+          "totalCents": "1550",
+          "currency": "CAD",
+          "verificationVersion": "1.0.0"
+        },
+        "lineage": { "headEventHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "eventCount": 3 },
+        "protocol": { "protocolVersion": "1.0.0-rc.1" },
+        "signatures": {
+          "issuedBy": "crinkl-authority",
+          "publicKey": "11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=",
+          "tokenHash": "2ff778994e88f59eeaa3a92a7e0832428dce490f0488682172f538f8325724db",
+          "signature": "RWOsj/kus/nc5tXYbzxjifFSN9/DfL4hwnQwv0qIMkD2C+kr06A1n9z2cxgw/t3UagDMBux2TYAGfLc5nC/NCQ=="
+        }
+      }
+    },
+    {
+      "id": "token.spendAttestation.portableV1.invalidated.duplicate",
+      "token": {
+        "tokenType": "SPEND_ATTESTATION",
+        "schemaVersion": 1,
+        "spendId": "spend-3",
+        "canonical": { "status": "INVALIDATED" },
+        "lineage": { "headEventHash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "eventCount": 2 },
+        "protocol": { "protocolVersion": "1.0.0-rc.1" },
+        "signatures": {
+          "issuedBy": "crinkl-authority",
+          "publicKey": "11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=",
+          "tokenHash": "9665a08fb6f2b3894ad98d4af08c6be82d8e8b2982a3bc44fedcb2df29a32e91",
+          "signature": "KjQBZxO7yl7qzlf7/EITIWBH7Fqx303v3xdRIJTmSFf/LD7O3wvUe+wkFHmsPBAfrugQ8Ze1Q1oErXh1dWo0Dw=="
+        }
+      }
+    },
+    {
+      "id": "token.spendAttestation.portableV1.corrected.then.invalidated",
+      "token": {
+        "tokenType": "SPEND_ATTESTATION",
+        "schemaVersion": 1,
+        "spendId": "spend-4",
+        "canonical": { "status": "INVALIDATED" },
+        "lineage": { "headEventHash": "4444444444444444444444444444444444444444444444444444444444444444", "eventCount": 4 },
+        "protocol": { "protocolVersion": "1.0.0-rc.1" },
+        "signatures": {
+          "issuedBy": "crinkl-authority",
+          "publicKey": "11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=",
+          "tokenHash": "2a1f7000fe224b0b7e23373bef3c6a77b9886203c381426e9da557f9653eca04",
+          "signature": "s45rDcADnfy0gEbMZ2RVnQuvayV1adpogpJ9puqIsG1XNrXQiCw5vqaGGG2C9Z1GeeL2X7RHlLoV5JSvDLjyCw=="
+        }
+      }
+    }
+  ]
+}

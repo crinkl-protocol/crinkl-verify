@@ -1,0 +1,25 @@
+{
+  "fixtureSet": "crinkl-verify-native-v1",
+  "source": {
+    "repository": "crinkl-protocol",
+    "commit": "d81a68a47170a3fd23712504dece25e38f18b1d8",
+    "license": "source repository did not contain a LICENSE file at this commit; fixtures are protocol interoperability data, not copied implementation code"
+  },
+  "artifacts": [
+    {
+      "path": "conformance/v1/vectors/token.spendAttestation.portableV1.fromSpendStream.json",
+      "sha256": "2303b9a2da50f1185cd76f990bc684eb7449559e3bea7aa0d608d66f5dd014de",
+      "usedBy": "fixtures/native-v1.json"
+    },
+    {
+      "path": "conformance/v1/vectors/tokenHash.spendAttestation.v1.json",
+      "sha256": "aea459a8020f3a21fdc6b10896900cab0e20e499301fe173ca37ae282deb1ed5",
+      "usedBy": "fixtures/native-v1.json"
+    },
+    {
+      "path": "protocol/TOKENS.md",
+      "sha256": "f61e42d70430443234e16295cef02beb6fccb67df1fcedfdfaebe5c93ccb386c",
+      "usedBy": "native V1 verifier implementation"
+    }
+  ]
+}
