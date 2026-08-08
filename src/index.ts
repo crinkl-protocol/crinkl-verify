@@ -4,6 +4,10 @@ export {
   verifyNativeSpendAttestation
 } from "./native-v1.js";
 export { verifyW3cSpendAttestation } from "./w3c-v1.js";
+export { verifyRewardCommitmentV1 } from "./reward-commitment-v1.js";
+export { verifySpendWithRewardCommitment } from "./spend-reward-commitment.js";
+export { EMPTY_LEAF_HASH_HEX, combineSorted, computeLeafHash, verifyInclusionProof } from "./merkle.js";
+export { computeSystemEventHash } from "./system-stream.js";
 export type * from "./types.js";
 
 import { detectArtifactFormatFromSnapshot } from "./format.js";

@@ -20,6 +20,42 @@
       "path": "protocol/TOKENS.md",
       "sha256": "f61e42d70430443234e16295cef02beb6fccb67df1fcedfdfaebe5c93ccb386c",
       "usedBy": "native V1 verifier implementation"
+    },
+    {
+      "path": "conformance/v1/vectors/merkle.rewardBatch.schemaV1.json",
+      "commit": "5eb7c6360333adb430ead7f2f105f0494cd096c3",
+      "sha256": "23a954cb128acbe44bd974f370e70c92d1f23461f2ba3208a564a5412553ece0",
+      "usedBy": "fixtures/merkle-reward-batch-v1.json (Merkle leaf-hash/domain-separation/sorted-pair-combine primitive conformance only; see note in that fixture about field-naming drift vs the current RewardCommitmentTokenV1 leaf schema)"
+    },
+    {
+      "path": "conformance/v1/vectors/merkle.rewardBatch.schemaV2.rewardEventsRoot.json",
+      "commit": "5eb7c6360333adb430ead7f2f105f0494cd096c3",
+      "sha256": "90512859b41c775407a82865f4570a77a8da958b8194305f8fdd5f9764f85c6f",
+      "usedBy": "fixtures/merkle-reward-events-root-v2.json (RewardIssuanceLeaf domain-separation/sorted-pair-combine primitive conformance)"
+    },
+    {
+      "path": "protocol/TOKENS.md",
+      "commit": "5eb7c6360333adb430ead7f2f105f0494cd096c3",
+      "sha256": "b5eb9e3e64217cd0ab39a7d2836a6320b5acd93922eb990c42c0d51eb7e18098",
+      "usedBy": "reward-commitment-v1.ts implementation (Reward Commitment Token + Linking Spend <-> Reward sections)"
+    },
+    {
+      "path": "protocol/COMMITMENT_LAYER.md",
+      "commit": "5eb7c6360333adb430ead7f2f105f0494cd096c3",
+      "sha256": "4f63019ae6769b7c31dad43862a6734fb3120ebdf5164ff103d8744561ffd59d",
+      "usedBy": "reward-commitment-v1.ts, merkle.ts, system-stream.ts implementation"
+    },
+    {
+      "path": "protocol/EVENTS.md",
+      "commit": "5eb7c6360333adb430ead7f2f105f0494cd096c3",
+      "sha256": "8e39ccf828d3802c3a0848ca408a6081869e7815134439254e5be9e7239036ce",
+      "usedBy": "system-stream.ts implementation (System-Stream Event Envelope, ordering rules)"
+    },
+    {
+      "path": "protocol/DATA_STRUCTURES.md",
+      "commit": "5eb7c6360333adb430ead7f2f105f0494cd096c3",
+      "sha256": "d6f05e856d49a95c12a1cf4216f02b1487b6c4b8b7c6af66222d56e72a62d16e",
+      "usedBy": "system-stream.ts implementation (Integrity Envelope eventHash/signature rules; Signature/PublicKey/Hash scalar encodings)"
     }
   ],
   "fixtureBindings": [
@@ -80,6 +116,22 @@
       "sourceArtifact": "conformance/v1/vectors/tokenHash.spendAttestation.v1.json",
       "sourceCaseId": "tokenHash.spendAttestation.unsigned.noWallet.v1",
       "sourcePath": ["expectedTokenHashHex"]
+    },
+    {
+      "fixture": "fixtures/merkle-reward-batch-v1.json",
+      "fixturePath": ["case"],
+      "sourceArtifact": "conformance/v1/vectors/merkle.rewardBatch.schemaV1.json",
+      "commit": "5eb7c6360333adb430ead7f2f105f0494cd096c3",
+      "sourceCaseId": "merkle.batch.schemaV1.three-leaves.padded",
+      "sourcePath": []
+    },
+    {
+      "fixture": "fixtures/merkle-reward-events-root-v2.json",
+      "fixturePath": ["case"],
+      "sourceArtifact": "conformance/v1/vectors/merkle.rewardBatch.schemaV2.rewardEventsRoot.json",
+      "commit": "5eb7c6360333adb430ead7f2f105f0494cd096c3",
+      "sourceCaseId": "merkle.rewardEventsRoot.schemaV2.sorted-by-spendId",
+      "sourcePath": []
     }
   ]
 }

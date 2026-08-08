@@ -18,6 +18,22 @@ export function sha256HexUtf8(value: string): string {
   return bytesToHex(sha256(encoder.encode(value)));
 }
 
+/** SHA-256 over raw bytes (as opposed to {@link sha256HexUtf8}'s UTF-8 string input). */
+export function sha256Hex(bytes: Uint8Array): string {
+  return bytesToHex(sha256(bytes));
+}
+
+export function concatBytes(...parts: Uint8Array[]): Uint8Array {
+  const total = parts.reduce((sum, part) => sum + part.length, 0);
+  const result = new Uint8Array(total);
+  let offset = 0;
+  for (const part of parts) {
+    result.set(part, offset);
+    offset += part.length;
+  }
+  return result;
+}
+
 export function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }

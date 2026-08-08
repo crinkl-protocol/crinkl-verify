@@ -1,0 +1,443 @@
+{
+  "generatedBy": "scripts/generate-reward-commitment-fixtures.mjs",
+  "note": "Self-signed, deterministic test-only fixtures; not released protocol conformance vectors. See fixtures/provenance.json for the released Merkle vectors this package's Merkle primitive is separately checked against.",
+  "cases": [
+    {
+      "id": "rewardCommitment.v1.committed.1a",
+      "token": {
+        "tokenType": "REWARD_COMMITMENT",
+        "schemaVersion": 1,
+        "chainId": "solana:devnet",
+        "economicTier": "COMMITTED",
+        "commitmentEvent": {
+          "eventId": "sha256:evt-commit-1a",
+          "eventName": "REWARD_BATCH_COMMITTED",
+          "chainId": "solana:devnet",
+          "signedBy": "authority-rotated",
+          "payload": {
+            "batchId": "batch-1a-committed",
+            "root": "e72a972d745fe3337aa6b38dcfd9bd3af804cf5559c3dac6547efbb8ec95a640",
+            "leafCount": 2,
+            "totalPoints": "800",
+            "schemaVersion": "1a",
+            "txRef": "solana:devnet:tx-batch-1a",
+            "committedAt": "2026-01-04T00:00:00.000Z"
+          },
+          "timestamp": "2026-01-04T00:00:00.000Z",
+          "protocolVersion": "1.0.0-rc.1",
+          "prevHash": "d5d01d545f10d4dde182d6ae89a0b75fb6bb864a14019570b565c4126eb235d2",
+          "eventHash": "a4d6887f05a9c91f0ef138b58ec35004c1b2e35d230df511b99f1420bff39550",
+          "signature": "bNWxD1jtU1b042w5+YHJasGaD3INCx+mtX/Zoq/DjouCMeTt2pJO27u7TBhaRFYFhlwDnVX4Np7i5B/FCgkKCg=="
+        },
+        "systemEvents": [
+          {
+            "eventId": "sha256:evt-genesis-1a",
+            "eventName": "AUTHORITY_REGISTERED",
+            "chainId": "solana:devnet",
+            "signedBy": "authority-genesis",
+            "payload": {
+              "authorityId": "authority-genesis",
+              "publicKey": "EYks1csXIpGMDpCCtSesaapbItcqp8EGYs44pL7uC6Q=",
+              "validFrom": "2026-01-01T00:00:00.000Z",
+              "predecessorId": null,
+              "txRef": "solana:devnet:tx-genesis",
+              "registeredAt": "2026-01-01T00:00:00.000Z"
+            },
+            "timestamp": "2026-01-01T00:00:00.000Z",
+            "protocolVersion": "1.0.0-rc.1",
+            "prevHash": null,
+            "eventHash": "9d0967bf8bc3f45f02227063830bfc92f2493235d34efd29d014a68f2c463a04",
+            "signature": "UQ7/Pb9P9zJcE+tk7tVobvvvijWJ//B4M5MZxaGYS+JyvKH6soFgx2+A6LFzqAyUJcTtjOndykP5Q/kK8PwgAA=="
+          },
+          {
+            "eventId": "sha256:evt-rotate-1a",
+            "eventName": "AUTHORITY_REGISTERED",
+            "chainId": "solana:devnet",
+            "signedBy": "authority-genesis",
+            "payload": {
+              "authorityId": "authority-rotated",
+              "publicKey": "EbpIEbyhS9j8S40D+MouMmoM0mHQVatEVXRwAbU5zuY=",
+              "validFrom": "2026-01-02T00:00:00.000Z",
+              "predecessorId": "authority-genesis",
+              "txRef": "solana:devnet:tx-rotate",
+              "registeredAt": "2026-01-02T00:00:00.000Z"
+            },
+            "timestamp": "2026-01-02T00:00:00.000Z",
+            "protocolVersion": "1.0.0-rc.1",
+            "prevHash": "9d0967bf8bc3f45f02227063830bfc92f2493235d34efd29d014a68f2c463a04",
+            "eventHash": "5997e8c5819c8f4cfea38125921a7511ae495d58789751d4c3a5c536d9424306",
+            "signature": "pjDMVTxTRD2O/oVeTT8N1mkuuSdraGGznztmfEMyYRLE5p8RIj18MCSacV43rbSopBZV+hvCT/fW7Ae3SOcPBQ=="
+          },
+          {
+            "eventId": "sha256:evt-revoke-1a",
+            "eventName": "AUTHORITY_REVOKED",
+            "chainId": "solana:devnet",
+            "signedBy": "authority-rotated",
+            "payload": {
+              "authorityId": "authority-genesis",
+              "validUntil": "2026-01-03T00:00:00.000Z",
+              "revokedBy": "authority-rotated",
+              "reason": "scheduled rotation",
+              "txRef": "solana:devnet:tx-revoke",
+              "revokedAt": "2026-01-03T00:00:00.000Z"
+            },
+            "timestamp": "2026-01-03T00:00:00.000Z",
+            "protocolVersion": "1.0.0-rc.1",
+            "prevHash": "5997e8c5819c8f4cfea38125921a7511ae495d58789751d4c3a5c536d9424306",
+            "eventHash": "d5d01d545f10d4dde182d6ae89a0b75fb6bb864a14019570b565c4126eb235d2",
+            "signature": "x4czb9E0VVoI9yOZbWpw7SqZn50KB9zprI99CBJE6hu83uxwjnKCt3Pc8O+mow2nA5720G9per279DAwrxrcBw=="
+          },
+          {
+            "eventId": "sha256:evt-commit-1a",
+            "eventName": "REWARD_BATCH_COMMITTED",
+            "chainId": "solana:devnet",
+            "signedBy": "authority-rotated",
+            "payload": {
+              "batchId": "batch-1a-committed",
+              "root": "e72a972d745fe3337aa6b38dcfd9bd3af804cf5559c3dac6547efbb8ec95a640",
+              "leafCount": 2,
+              "totalPoints": "800",
+              "schemaVersion": "1a",
+              "txRef": "solana:devnet:tx-batch-1a",
+              "committedAt": "2026-01-04T00:00:00.000Z"
+            },
+            "timestamp": "2026-01-04T00:00:00.000Z",
+            "protocolVersion": "1.0.0-rc.1",
+            "prevHash": "d5d01d545f10d4dde182d6ae89a0b75fb6bb864a14019570b565c4126eb235d2",
+            "eventHash": "a4d6887f05a9c91f0ef138b58ec35004c1b2e35d230df511b99f1420bff39550",
+            "signature": "bNWxD1jtU1b042w5+YHJasGaD3INCx+mtX/Zoq/DjouCMeTt2pJO27u7TBhaRFYFhlwDnVX4Np7i5B/FCgkKCg=="
+          }
+        ],
+        "batch": {
+          "batchId": "batch-1a-committed",
+          "root": "e72a972d745fe3337aa6b38dcfd9bd3af804cf5559c3dac6547efbb8ec95a640",
+          "leafCount": 2,
+          "totalPoints": "800",
+          "schemaVersion": "1a",
+          "txRef": "solana:devnet:tx-batch-1a",
+          "committedAt": "2026-01-04T00:00:00.000Z"
+        },
+        "recipientId": "wallet-subject-1a",
+        "leaf": {
+          "batchId": "batch-1a-committed",
+          "recipientId": "wallet-subject-1a",
+          "totalPoints": "500"
+        },
+        "proof": {
+          "batchId": "batch-1a-committed",
+          "leaf": {
+            "batchId": "batch-1a-committed",
+            "recipientId": "wallet-subject-1a",
+            "totalPoints": "500"
+          },
+          "leafHash": "386b7197f582346308a41acb8422c8ec815c858a9c2701f4afda29bde8591e99",
+          "siblings": [
+            "7d53ab5c10fd604fa9bc286c3022ddba7d87c50f53be26dedbd0d05ec27ccb3d"
+          ]
+        }
+      },
+      "genesisAuthorityId": "authority-genesis",
+      "genesisPublicKeyBase64": "EYks1csXIpGMDpCCtSesaapbItcqp8EGYs44pL7uC6Q=",
+      "genesisValidFrom": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "rewardCommitment.v1.committed.1b",
+      "token": {
+        "tokenType": "REWARD_COMMITMENT",
+        "schemaVersion": 1,
+        "chainId": "solana:devnet",
+        "economicTier": "COMMITTED",
+        "commitmentEvent": {
+          "eventId": "sha256:evt-commit-1b",
+          "eventName": "REWARD_BATCH_COMMITTED",
+          "chainId": "solana:devnet",
+          "signedBy": "authority-genesis-1b",
+          "payload": {
+            "batchId": "batch-1b-committed",
+            "root": "0ceb0557165a51df1431bae17e331196a3fac998c6a436f1be7f1b6cdc8695a7",
+            "leafCount": 2,
+            "totalPoints": "330",
+            "schemaVersion": "1b",
+            "txRef": "solana:devnet:tx-batch-1b",
+            "committedAt": "2026-01-01T00:00:00.000Z"
+          },
+          "timestamp": "2026-01-01T00:00:00.000Z",
+          "protocolVersion": "1.0.0-rc.1",
+          "prevHash": "e5bfe2ad90ee220e794b3e31d457dbd792141a985bd48618cf2061c2d1eafb43",
+          "eventHash": "278b3e69de6b9319a78817c9ae275d89ec268cccd2bc86de912c748abedd5e8f",
+          "signature": "YtHRHDrJwu1+JnXm4+BlbwDXbI8qKRcHm5U84tfjLnBskV05G7zhErfmvFw8R+nzk7E5gSjavVynWna3wLKjAA=="
+        },
+        "systemEvents": [
+          {
+            "eventId": "sha256:evt-genesis-1b",
+            "eventName": "AUTHORITY_REGISTERED",
+            "chainId": "solana:devnet",
+            "signedBy": "authority-genesis-1b",
+            "payload": {
+              "authorityId": "authority-genesis-1b",
+              "publicKey": "EYks1csXIpGMDpCCtSesaapbItcqp8EGYs44pL7uC6Q=",
+              "validFrom": "2026-01-01T00:00:00.000Z",
+              "predecessorId": null,
+              "txRef": "solana:devnet:tx-genesis-1b",
+              "registeredAt": "2026-01-01T00:00:00.000Z"
+            },
+            "timestamp": "2026-01-01T00:00:00.000Z",
+            "protocolVersion": "1.0.0-rc.1",
+            "prevHash": null,
+            "eventHash": "e5bfe2ad90ee220e794b3e31d457dbd792141a985bd48618cf2061c2d1eafb43",
+            "signature": "+59eCyqxBb7k+7UFO++nTusgWas3Dl7k6sg+Tp2qNWDDkcT+vFKZ2o7xuji0O/p/MhP+YdcdTmBAZ4uyUFhwDg=="
+          },
+          {
+            "eventId": "sha256:evt-commit-1b",
+            "eventName": "REWARD_BATCH_COMMITTED",
+            "chainId": "solana:devnet",
+            "signedBy": "authority-genesis-1b",
+            "payload": {
+              "batchId": "batch-1b-committed",
+              "root": "0ceb0557165a51df1431bae17e331196a3fac998c6a436f1be7f1b6cdc8695a7",
+              "leafCount": 2,
+              "totalPoints": "330",
+              "schemaVersion": "1b",
+              "txRef": "solana:devnet:tx-batch-1b",
+              "committedAt": "2026-01-01T00:00:00.000Z"
+            },
+            "timestamp": "2026-01-01T00:00:00.000Z",
+            "protocolVersion": "1.0.0-rc.1",
+            "prevHash": "e5bfe2ad90ee220e794b3e31d457dbd792141a985bd48618cf2061c2d1eafb43",
+            "eventHash": "278b3e69de6b9319a78817c9ae275d89ec268cccd2bc86de912c748abedd5e8f",
+            "signature": "YtHRHDrJwu1+JnXm4+BlbwDXbI8qKRcHm5U84tfjLnBskV05G7zhErfmvFw8R+nzk7E5gSjavVynWna3wLKjAA=="
+          }
+        ],
+        "batch": {
+          "batchId": "batch-1b-committed",
+          "root": "0ceb0557165a51df1431bae17e331196a3fac998c6a436f1be7f1b6cdc8695a7",
+          "leafCount": 2,
+          "totalPoints": "330",
+          "schemaVersion": "1b",
+          "txRef": "solana:devnet:tx-batch-1b",
+          "committedAt": "2026-01-01T00:00:00.000Z"
+        },
+        "recipientId": "8497559d89bd80fc70a2313cf5fb22d2445642d41ab1bf123d648131866b670a",
+        "leaf": {
+          "batchId": "batch-1b-committed",
+          "recipientId": "8497559d89bd80fc70a2313cf5fb22d2445642d41ab1bf123d648131866b670a",
+          "totalPoints": "220"
+        },
+        "proof": {
+          "batchId": "batch-1b-committed",
+          "leaf": {
+            "batchId": "batch-1b-committed",
+            "recipientId": "8497559d89bd80fc70a2313cf5fb22d2445642d41ab1bf123d648131866b670a",
+            "totalPoints": "220"
+          },
+          "leafHash": "d03029507712f7003b342adaf2af4b0816177d0418ef5067f887ad0317d7e181",
+          "siblings": [
+            "e257d7d78f5d3ecb2cf92960edeb725906d1ea4c444818faa8eb5c75147a09ea"
+          ]
+        }
+      },
+      "genesisAuthorityId": "authority-genesis-1b",
+      "genesisPublicKeyBase64": "EYks1csXIpGMDpCCtSesaapbItcqp8EGYs44pL7uC6Q=",
+      "genesisValidFrom": "2026-01-01T00:00:00.000Z",
+      "wallet": "wallet-subject-1b",
+      "blinderHex": "9db3bedfc52d39ca2aee00c90a7e6e7a382fdb38836d67a2ef963686bddd306f"
+    },
+    {
+      "id": "rewardCommitment.v1.committedBacked.2a",
+      "token": {
+        "tokenType": "REWARD_COMMITMENT",
+        "schemaVersion": 1,
+        "chainId": "solana:devnet",
+        "economicTier": "COMMITTED_BACKED",
+        "commitmentEvent": {
+          "eventId": "sha256:evt-commit-2a",
+          "eventName": "REWARD_BATCH_COMMITTED",
+          "chainId": "solana:devnet",
+          "signedBy": "authority-genesis-2a",
+          "payload": {
+            "batchId": "batch-2a-committed-backed",
+            "root": "b3d00bfb43a22dd3134c0ed6b1af76ed029f2ccb79abbe34e201e1dcd1db42ce",
+            "leafCount": 2,
+            "totalPoints": "240",
+            "schemaVersion": "2a",
+            "txRef": "solana:devnet:tx-batch-2a",
+            "committedAt": "2026-01-01T00:00:00.000Z"
+          },
+          "timestamp": "2026-01-01T00:00:00.000Z",
+          "protocolVersion": "1.0.0-rc.1",
+          "prevHash": "eedf9ec48ee57d044cc30d07a7a55f36717d06de18848c719ae0d194d1567fbc",
+          "eventHash": "aef128e530d251caac823201a60dd016eb06faa17ce0c663a7a700ff474eb9a7",
+          "signature": "JRBmU82QAkqIY7zwAHqf5xuHGb0LSLjRs9A0jI6V4ZKMUk5JaunAvSSr8X8tOeX2ce1HNSC54hfjqTEbI7moDA=="
+        },
+        "backingEvent": {
+          "eventId": "sha256:evt-backing-2a",
+          "eventName": "REWARD_BATCH_BACKING_ATTESTED",
+          "chainId": "solana:devnet",
+          "signedBy": "authority-genesis-2a",
+          "payload": {
+            "batchId": "batch-2a-committed-backed",
+            "backingAsset": {
+              "chainId": "solana:mainnet-beta",
+              "mint": "cbBTC-mint-2a",
+              "decimals": 8
+            },
+            "backingAmount": "24000",
+            "backingVault": "vault-2a",
+            "backingTxRef": "solana:mainnet-beta:tx-backing-2a",
+            "backedAt": "2026-01-02T00:00:00.000Z"
+          },
+          "timestamp": "2026-01-02T00:00:00.000Z",
+          "protocolVersion": "1.0.0-rc.1",
+          "prevHash": "aef128e530d251caac823201a60dd016eb06faa17ce0c663a7a700ff474eb9a7",
+          "eventHash": "b5e668273f334fcac1df2c3df3eb17de8ca22fed73523ed9eeeccfaccbd88a0f",
+          "signature": "HqnrMHZIywe7vLiOQejPcfAzMJMVUc9tCannVBXaCEQ+fi73pYQZUE7AXMch7vtMhmF6O0J57LyFTzHE9mCJDA=="
+        },
+        "systemEvents": [
+          {
+            "eventId": "sha256:evt-genesis-2a",
+            "eventName": "AUTHORITY_REGISTERED",
+            "chainId": "solana:devnet",
+            "signedBy": "authority-genesis-2a",
+            "payload": {
+              "authorityId": "authority-genesis-2a",
+              "publicKey": "EYks1csXIpGMDpCCtSesaapbItcqp8EGYs44pL7uC6Q=",
+              "validFrom": "2026-01-01T00:00:00.000Z",
+              "predecessorId": null,
+              "txRef": "solana:devnet:tx-genesis-2a",
+              "registeredAt": "2026-01-01T00:00:00.000Z"
+            },
+            "timestamp": "2026-01-01T00:00:00.000Z",
+            "protocolVersion": "1.0.0-rc.1",
+            "prevHash": null,
+            "eventHash": "eedf9ec48ee57d044cc30d07a7a55f36717d06de18848c719ae0d194d1567fbc",
+            "signature": "vO8qzo9Tn0i5NmdgEyzYcErhhvkqti+c8LeK0mY9YGTyfnhIc+KAVdINpk3aH2TRDvP+GlAE09g9IM1ecAlNBQ=="
+          },
+          {
+            "eventId": "sha256:evt-commit-2a",
+            "eventName": "REWARD_BATCH_COMMITTED",
+            "chainId": "solana:devnet",
+            "signedBy": "authority-genesis-2a",
+            "payload": {
+              "batchId": "batch-2a-committed-backed",
+              "root": "b3d00bfb43a22dd3134c0ed6b1af76ed029f2ccb79abbe34e201e1dcd1db42ce",
+              "leafCount": 2,
+              "totalPoints": "240",
+              "schemaVersion": "2a",
+              "txRef": "solana:devnet:tx-batch-2a",
+              "committedAt": "2026-01-01T00:00:00.000Z"
+            },
+            "timestamp": "2026-01-01T00:00:00.000Z",
+            "protocolVersion": "1.0.0-rc.1",
+            "prevHash": "eedf9ec48ee57d044cc30d07a7a55f36717d06de18848c719ae0d194d1567fbc",
+            "eventHash": "aef128e530d251caac823201a60dd016eb06faa17ce0c663a7a700ff474eb9a7",
+            "signature": "JRBmU82QAkqIY7zwAHqf5xuHGb0LSLjRs9A0jI6V4ZKMUk5JaunAvSSr8X8tOeX2ce1HNSC54hfjqTEbI7moDA=="
+          },
+          {
+            "eventId": "sha256:evt-backing-2a",
+            "eventName": "REWARD_BATCH_BACKING_ATTESTED",
+            "chainId": "solana:devnet",
+            "signedBy": "authority-genesis-2a",
+            "payload": {
+              "batchId": "batch-2a-committed-backed",
+              "backingAsset": {
+                "chainId": "solana:mainnet-beta",
+                "mint": "cbBTC-mint-2a",
+                "decimals": 8
+              },
+              "backingAmount": "24000",
+              "backingVault": "vault-2a",
+              "backingTxRef": "solana:mainnet-beta:tx-backing-2a",
+              "backedAt": "2026-01-02T00:00:00.000Z"
+            },
+            "timestamp": "2026-01-02T00:00:00.000Z",
+            "protocolVersion": "1.0.0-rc.1",
+            "prevHash": "aef128e530d251caac823201a60dd016eb06faa17ce0c663a7a700ff474eb9a7",
+            "eventHash": "b5e668273f334fcac1df2c3df3eb17de8ca22fed73523ed9eeeccfaccbd88a0f",
+            "signature": "HqnrMHZIywe7vLiOQejPcfAzMJMVUc9tCannVBXaCEQ+fi73pYQZUE7AXMch7vtMhmF6O0J57LyFTzHE9mCJDA=="
+          }
+        ],
+        "batch": {
+          "batchId": "batch-2a-committed-backed",
+          "root": "b3d00bfb43a22dd3134c0ed6b1af76ed029f2ccb79abbe34e201e1dcd1db42ce",
+          "leafCount": 2,
+          "totalPoints": "240",
+          "schemaVersion": "2a",
+          "txRef": "solana:devnet:tx-batch-2a",
+          "committedAt": "2026-01-01T00:00:00.000Z"
+        },
+        "recipientId": "wallet-subject-2a",
+        "leaf": {
+          "batchId": "batch-2a-committed-backed",
+          "recipientId": "wallet-subject-2a",
+          "totalPoints": "150",
+          "rewardEventsRoot": "1747f1a9f31993b2788cc736cd4956feda1091f9634766c615631d5a024465c3"
+        },
+        "proof": {
+          "batchId": "batch-2a-committed-backed",
+          "leaf": {
+            "batchId": "batch-2a-committed-backed",
+            "recipientId": "wallet-subject-2a",
+            "totalPoints": "150",
+            "rewardEventsRoot": "1747f1a9f31993b2788cc736cd4956feda1091f9634766c615631d5a024465c3"
+          },
+          "leafHash": "e26ce510fff5ab64fbd5adc6c0290688baddef4dd031a38a2e8642d3610644c7",
+          "siblings": [
+            "9f36508934daf0cbb3b47db2c12541649a9548ec43900009c8058fbf860e569d"
+          ]
+        },
+        "rewardInclusionProof": {
+          "batchId": "batch-2a-committed-backed",
+          "recipientId": "wallet-subject-2a",
+          "rewardEventsRoot": "1747f1a9f31993b2788cc736cd4956feda1091f9634766c615631d5a024465c3",
+          "leaf": {
+            "spendId": "spend-2a-linked-001",
+            "rewardEventHash": "97122f0b3654328399dc136d5a43cef67f974ee837a9e671fcd6543e49b1b6e7"
+          },
+          "leafHash": "9536624a1d6bbb4ad513b3feb07e6e610185b852bbf1478fb792ab8d4ded51a2",
+          "siblings": [
+            "5526b4fea4e238cc3514006c804a2f044a651e195db73983585a0baa8fa39503"
+          ]
+        }
+      },
+      "spendToken": {
+        "tokenType": "SPEND_ATTESTATION",
+        "schemaVersion": 1,
+        "spendId": "spend-2a-linked-001",
+        "wallet": "wallet-subject-linkable",
+        "canonical": {
+          "status": "HARD_VERIFIED",
+          "storeHash": "sha256:615a3feb16984f61387960c6680227e94cf2c6b413004a19b5b2ef50e16dcd3e",
+          "timestamp": "2026-01-04T00:00:00.000Z",
+          "date": "2026-01-04",
+          "totalCents": "1500",
+          "currency": "USD",
+          "verificationVersion": "1.0.0"
+        },
+        "lineage": {
+          "headEventHash": "5294aab36f9678ef2e38949d38fc9565cf5bf4d9e6171b227638a35f6b89ef88",
+          "eventCount": 3
+        },
+        "protocol": {
+          "protocolVersion": "1.0.0-rc.1"
+        },
+        "signatures": {
+          "issuedBy": "crinkl-authority-reward-linked",
+          "publicKey": "JoBikaFEnnaOETtAS62jLB9zCgw/G6nODR/pihjuly4=",
+          "tokenHash": "deb4c9caca8d98f04ce01ef7073025e994591ea912a62bd1fa30d7dda626ed21",
+          "signature": "9NfGR4b6HOUSpjrCjV7wfAnGsLN2XtWSDYRY9PU1aByXw1oh8e9CY+T/0uXK7x0WVvJ7nGTorlJMA6L1YbS2DQ=="
+        }
+      },
+      "genesisAuthorityId": "authority-genesis-2a",
+      "genesisPublicKeyBase64": "EYks1csXIpGMDpCCtSesaapbItcqp8EGYs44pL7uC6Q=",
+      "genesisValidFrom": "2026-01-01T00:00:00.000Z",
+      "spendIssuer": {
+        "publicKeyBase64": "JoBikaFEnnaOETtAS62jLB9zCgw/G6nODR/pihjuly4=",
+        "issuedBy": "crinkl-authority-reward-linked"
+      }
+    }
+  ],
+  "rogueAuthority": {
+    "note": "An Ed25519 key never registered in any fixture's Authority Registry; adversarial tests use it to sign events that must be rejected as AUTHORITY_INVALID.",
+    "seedLabel": "reward-commitment-authority-rogue"
+  }
+}
