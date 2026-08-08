@@ -1,6 +1,6 @@
 # `@crinkl/verify`
 
-Private, unpublished TypeScript verifier for Crinkl portable spend artifacts.
+Verify Crinkl spend attestation tokens and reward commitments locally — no network, no accounts.
 
 `0.1.0-alpha.1` verifies the released native `SpendAttestationTokenV1` profile
 and the `RewardCommitmentTokenV1` profile offline, and composes the two into

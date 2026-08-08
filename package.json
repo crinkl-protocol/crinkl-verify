@@ -1,7 +1,7 @@
 {
   "name": "@crinkl/verify",
   "version": "0.1.0-alpha.1",
-  "description": "Offline verification for versioned Crinkl spend attestation artifacts.",
+  "description": "Verify Crinkl spend attestation tokens and reward commitments locally — no network, no accounts.",
   "private": true,
   "type": "module",
   "exports": {
@@ -17,6 +17,7 @@
     "LICENSE"
   ],
   "license": "Apache-2.0",
+  "author": "PriceChain Labs <support@crinkl.xyz>",
   "engines": {
     "node": ">=20"
   },
