@@ -21,5 +21,65 @@
       "sha256": "f61e42d70430443234e16295cef02beb6fccb67df1fcedfdfaebe5c93ccb386c",
       "usedBy": "native V1 verifier implementation"
     }
+  ],
+  "fixtureBindings": [
+    {
+      "fixture": "fixtures/native-v1.json",
+      "fixturePath": ["case", "token"],
+      "sourceArtifact": "conformance/v1/vectors/token.spendAttestation.portableV1.fromSpendStream.json",
+      "sourceCaseId": "token.spendAttestation.portableV1.hardVerified.basic",
+      "sourcePath": ["expectedToken"]
+    },
+    {
+      "fixture": "fixtures/native-v1-additional.json",
+      "fixturePath": ["cases", 0, "token"],
+      "sourceArtifact": "conformance/v1/vectors/token.spendAttestation.portableV1.fromSpendStream.json",
+      "sourceCaseId": "token.spendAttestation.portableV1.corrected.storeDateTotal",
+      "sourcePath": ["expectedToken"]
+    },
+    {
+      "fixture": "fixtures/native-v1-additional.json",
+      "fixturePath": ["cases", 1, "token"],
+      "sourceArtifact": "conformance/v1/vectors/token.spendAttestation.portableV1.fromSpendStream.json",
+      "sourceCaseId": "token.spendAttestation.portableV1.invalidated.duplicate",
+      "sourcePath": ["expectedToken"]
+    },
+    {
+      "fixture": "fixtures/native-v1-additional.json",
+      "fixturePath": ["cases", 2, "token"],
+      "sourceArtifact": "conformance/v1/vectors/token.spendAttestation.portableV1.fromSpendStream.json",
+      "sourceCaseId": "token.spendAttestation.portableV1.corrected.then.invalidated",
+      "sourcePath": ["expectedToken"]
+    },
+    {
+      "fixture": "fixtures/native-v1.json",
+      "fixturePath": ["hashOnlyCases", 0, "unsignedToken"],
+      "sourceArtifact": "conformance/v1/vectors/tokenHash.spendAttestation.v1.json",
+      "sourceCaseId": "tokenHash.spendAttestation.unsigned.v1",
+      "sourcePath": ["unsignedTokenJson"],
+      "sourceEncoding": "json"
+    },
+    {
+      "fixture": "fixtures/native-v1.json",
+      "fixturePath": ["hashOnlyCases", 0, "expectedTokenHashHex"],
+      "sourceArtifact": "conformance/v1/vectors/tokenHash.spendAttestation.v1.json",
+      "sourceCaseId": "tokenHash.spendAttestation.unsigned.v1",
+      "sourcePath": ["expectedTokenHashHex"]
+    },
+    {
+      "fixture": "fixtures/native-v1.json",
+      "fixturePath": ["hashOnlyCases", 1, "unsignedToken"],
+      "sourceArtifact": "conformance/v1/vectors/tokenHash.spendAttestation.v1.json",
+      "sourceCaseId": "tokenHash.spendAttestation.unsigned.noWallet.v1",
+      "sourcePath": ["unsignedTokenJson"],
+      "sourceEncoding": "json"
+    },
+    {
+      "fixture": "fixtures/native-v1.json",
+      "fixturePath": ["hashOnlyCases", 1, "expectedTokenHashHex"],
+      "sourceArtifact": "conformance/v1/vectors/tokenHash.spendAttestation.v1.json",
+      "sourceCaseId": "tokenHash.spendAttestation.unsigned.noWallet.v1",
+      "sourcePath": ["expectedTokenHashHex"]
+    }
   ]
 }

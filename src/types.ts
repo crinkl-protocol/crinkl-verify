@@ -75,6 +75,7 @@ export type NativeIssuerTrustResolver = (
 
 export interface NativeVerificationOptions {
   issuerTrust?: NativeIssuerTrustResolver;
+  /** Defaults to the released native V1 protocolVersion (1.0.0-rc.1). */
   supportedProtocolVersions?: readonly string[];
 }
 
@@ -112,10 +113,14 @@ export interface SpendAttestationTokenV1 {
     totalCents?: string;
     currency?: string;
     timestamp?: string;
+    geoRegion?: string;
+    cbsaCode?: string;
     verificationVersion?: string;
+    [key: string]: unknown;
   };
-  lineage: { headEventHash: string; eventCount: number };
-  protocol: { protocolVersion: string };
+  lineage: { headEventHash: string; eventCount: number; [key: string]: unknown };
+  protocol: { protocolVersion: string; [key: string]: unknown };
+  zk?: { commitments?: ZkCommitments; [key: string]: unknown };
   signatures: {
     issuedBy: string;
     publicKey: string;
@@ -123,4 +128,16 @@ export interface SpendAttestationTokenV1 {
     signature: string;
   };
   [key: string]: unknown;
+}
+
+/**
+ * Commitment encodings remain scheme-defined. The native verifier checks the
+ * signed V1 envelope and treats each commitment value as opaque JSON data.
+ */
+export interface ZkCommitments {
+  C_store: unknown;
+  C_total: unknown;
+  C_dayIndex: unknown;
+  C_geoRegion: unknown;
+  C_cbsaCode?: unknown;
 }

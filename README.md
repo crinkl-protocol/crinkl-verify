@@ -22,6 +22,10 @@ const result = await verifyNativeSpendAttestation(token, {
 if (!result.cryptographicallyValid || result.issuerAuthorized !== true) {
   throw new Error(result.errors.map((error) => error.code).join(", "));
 }
+
+// This proves an authorized historical issuance snapshot only. Do not treat
+// it as accepted for a current reward, claim, or eligibility decision without
+// separately obtaining and applying your currentness policy/evidence.
 ```
 
 `cryptographicallyValid`, `issuerAuthorized`, `current`, and `accepted` are
@@ -30,6 +34,10 @@ reports currentness as `"unknown"` and does not mark the artifact accepted for
 current reliance. The calling application supplies currentness/acceptance
 policy and issuer trust; this package does not fetch keys, DIDs, contexts,
 status lists, or refresh endpoints.
+
+Native V1 defaults to the released `protocolVersion` `1.0.0-rc.1`. Supply
+`supportedProtocolVersions` only when the calling application deliberately
+pins a different explicit set.
 
 ## Scope
 
