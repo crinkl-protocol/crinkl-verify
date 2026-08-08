@@ -5,7 +5,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import * as ed25519 from "@noble/ed25519";
-import { computeNativeSpendAttestationTokenHash, verifyNativeSpendAttestation } from "../dist/index.js";
+import {
+  computeNativeSpendAttestationTokenHash,
+  detectArtifactFormat,
+  verify,
+  verifyNativeSpendAttestation
+} from "../dist/index.js";
 
 const fixture = JSON.parse(readFileSync(new URL("../fixtures/native-v1.json", import.meta.url)));
 const seed = Uint8Array.from(Buffer.from("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60", "hex"));
@@ -45,6 +50,57 @@ test("takes one immutable inert snapshot before issuer trust", async () => {
   assert.equal(result.cryptographicallyValid, true);
   assert.equal(result.issuerAuthorized, true);
   assert.deepEqual(result.errors, []);
+});
+
+test("generic verification reuses one immutable native snapshot", async () => {
+  const original = structuredClone(fixture.case.token);
+  const result = await verify(original, {
+    issuerTrust: ({ token }) => {
+      assert.equal(Object.isFrozen(token), true);
+      assert.equal(Object.isFrozen(token.canonical), true);
+      original.canonical.totalCents = "9999";
+      return true;
+    }
+  });
+  assert.equal(result.cryptographicallyValid, true);
+  assert.equal(result.issuerAuthorized, true);
+  assert.deepEqual(result.errors, []);
+});
+
+test("generic verification and format detection never access hostile input", async () => {
+  let proxyTrapCalls = 0;
+  const proxy = new Proxy({}, {
+    get() { proxyTrapCalls += 1; throw new Error("get trap"); },
+    getOwnPropertyDescriptor() { proxyTrapCalls += 1; throw new Error("descriptor trap"); },
+    getPrototypeOf() { proxyTrapCalls += 1; throw new Error("prototype trap"); },
+    ownKeys() { proxyTrapCalls += 1; throw new Error("ownKeys trap"); }
+  });
+  assert.equal(detectArtifactFormat(proxy), undefined);
+  const proxyResult = await verify(proxy);
+  assert.equal(proxyResult.errors[0].code, "SCHEMA_INVALID");
+  assert.equal(proxyTrapCalls, 0);
+
+  let getterCalls = 0;
+  const getter = {};
+  Object.defineProperty(getter, "tokenType", {
+    enumerable: true,
+    get() { getterCalls += 1; return "SPEND_ATTESTATION"; }
+  });
+  assert.equal(detectArtifactFormat(getter), undefined);
+  const getterResult = await verify(getter);
+  assert.equal(getterResult.errors[0].code, "SCHEMA_INVALID");
+  assert.equal(getterCalls, 0);
+
+  let throwingGetterCalls = 0;
+  const throwingGetter = {};
+  Object.defineProperty(throwingGetter, "type", {
+    enumerable: true,
+    get() { throwingGetterCalls += 1; throw new Error("throwing getter"); }
+  });
+  assert.equal(detectArtifactFormat(throwingGetter), undefined);
+  const throwingResult = await verify(throwingGetter);
+  assert.equal(throwingResult.errors[0].code, "SCHEMA_INVALID");
+  assert.equal(throwingGetterCalls, 0);
 });
 
 test("rejects getters and proxies before they can change the signed view", async () => {
@@ -101,7 +157,7 @@ test("enforces exact unsigned signatures and all present V1 optional fields", as
     ["currency", (token) => { token.canonical.currency = "usd"; }],
     ["timestamp", (token) => { token.canonical.timestamp = "2024-01-01T00:00:00Z"; }],
     ["geoRegion", (token) => { token.canonical.geoRegion = "california"; }],
-    ["cbsaCode", (token) => { token.canonical.cbsaCode = "UNKNOWN"; }],
+    ["cbsaCode", (token) => { token.canonical.cbsaCode = "Unknown"; }],
     ["verificationVersion", (token) => { token.canonical.verificationVersion = "version-one"; }],
     ["zk commitments", (token) => { token.zk = { commitments: { C_store: "opaque" } }; }]
   ]) {
@@ -113,12 +169,41 @@ test("enforces exact unsigned signatures and all present V1 optional fields", as
 
   const extended = structuredClone(fixture.case.token);
   extended.canonical.geoRegion = "US-CA";
-  extended.canonical.cbsaCode = "Unknown";
+  extended.canonical.cbsaCode = "UNKNOWN";
   extended.zk = { commitments: { C_store: "opaque", C_total: "opaque", C_dayIndex: "opaque", C_geoRegion: "opaque" } };
   await sign(extended);
   const extendedResult = await verifyNativeSpendAttestation(extended, { issuerTrust: trust });
   assert.equal(extendedResult.cryptographicallyValid, true);
   assert.equal(extendedResult.issuerAuthorized, true);
+});
+
+test("enforces SemVer 2.0 numeric identifier rules", async () => {
+  for (const version of ["1.0.0-01", "1.0.0-alpha.01", "01.0.0", "1.0.0-alpha..1"]) {
+    const protocolToken = structuredClone(fixture.case.token);
+    protocolToken.protocol.protocolVersion = version;
+    const protocolResult = await verifyNativeSpendAttestation(protocolToken, {
+      supportedProtocolVersions: [version]
+    });
+    assert.equal(protocolResult.errors[0].code, "SCHEMA_INVALID", `protocolVersion ${version}`);
+
+    const canonicalToken = structuredClone(fixture.case.token);
+    canonicalToken.canonical.verificationVersion = version;
+    const canonicalResult = await verifyNativeSpendAttestation(canonicalToken);
+    assert.equal(canonicalResult.errors[0].code, "SCHEMA_INVALID", `verificationVersion ${version}`);
+  }
+
+  for (const version of ["1.0.0-rc.1", "1.0.0-alpha.0", "1.0.0-0", "1.0.0+build.01"]) {
+    const token = structuredClone(fixture.case.token);
+    token.protocol.protocolVersion = version;
+    token.canonical.verificationVersion = version;
+    await sign(token);
+    const result = await verifyNativeSpendAttestation(token, {
+      issuerTrust: trust,
+      supportedProtocolVersions: [version]
+    });
+    assert.equal(result.cryptographicallyValid, true, version);
+    assert.equal(result.issuerAuthorized, true, version);
+  }
 });
 
 test("rejects noncanonical RFC 4648 Base64 aliases", async () => {

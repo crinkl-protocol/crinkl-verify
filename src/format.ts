@@ -1,12 +1,13 @@
+import { createInertJsonSnapshot, type JsonValue } from "./json.js";
 import type { ArtifactFormat } from "./types.js";
 
-function object(value: unknown): Record<string, unknown> | undefined {
+function object(value: JsonValue | undefined): Record<string, JsonValue> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
+    ? (value as Record<string, JsonValue>)
     : undefined;
 }
 
-export function detectArtifactFormat(input: unknown): ArtifactFormat | undefined {
+export function detectArtifactFormatFromSnapshot(input: JsonValue): ArtifactFormat | undefined {
   const value = object(input);
   if (!value) return undefined;
   if (value.tokenType === "SPEND_ATTESTATION" && value.schemaVersion === 1) {
@@ -17,4 +18,11 @@ export function detectArtifactFormat(input: unknown): ArtifactFormat | undefined
     return "w3c-vc-crinkl-spend-attestation/v1";
   }
   return undefined;
+}
+
+export function detectArtifactFormat(input: unknown): ArtifactFormat | undefined {
+  const snapshot = createInertJsonSnapshot(input);
+  return snapshot.error || snapshot.value === undefined
+    ? undefined
+    : detectArtifactFormatFromSnapshot(snapshot.value);
 }

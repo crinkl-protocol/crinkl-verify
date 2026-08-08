@@ -12,12 +12,12 @@ import type { NativeVerificationOptions, SpendAttestationTokenV1, VerificationRe
 const DEFAULT_SUPPORTED_PROTOCOL_VERSIONS = ["1.0.0-rc.1"] as const;
 const HASH = /^[0-9a-f]{64}$/;
 const AMOUNT = /^(0|[1-9][0-9]*)$/;
-const VERSION = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+const VERSION = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const CURRENCY = /^[A-Z]{3}$/;
 const REGION = /^[A-Z]{2}(?:-[A-Z0-9]{1,3})?$/;
-const CBSA = /^(?:\d{5}|non-metro:[A-Z]{2}(?:-[A-Z0-9]{1,3})?|Unknown)$/;
+const CBSA = /^(?:\d{5}|non-metro:[A-Z]{2}(?:-[A-Z0-9]{1,3})?|UNKNOWN)$/;
 
 function object(value: JsonValue | undefined): Record<string, JsonValue> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -47,6 +47,15 @@ function isDate(value: string): boolean {
   if (!DATE.test(value)) return false;
   const date = new Date(`${value}T00:00:00.000Z`);
   return Number.isFinite(date.valueOf()) && date.toISOString().slice(0, 10) === value;
+}
+
+function isVersion(value: string): boolean {
+  const match = VERSION.exec(value);
+  if (!match) return false;
+  const prerelease = match[4];
+  return prerelease === undefined || prerelease.split(".").every((identifier) =>
+    !/^[0-9]+$/.test(identifier) || identifier === "0" || !identifier.startsWith("0")
+  );
 }
 
 function invalid(result: VerificationResult, path: string, message: string): VerificationResult {
@@ -95,8 +104,8 @@ function parseToken(input: JsonValue, result: VerificationResult): SpendAttestat
     validateOptionalString(canonical, "currency", "$.canonical.currency", (candidate) => CURRENCY.test(candidate), "currency must be an uppercase ISO 4217 code.", result);
     validateOptionalString(canonical, "timestamp", "$.canonical.timestamp", isTimestamp, "timestamp must be a valid UTC millisecond timestamp.", result);
     validateOptionalString(canonical, "geoRegion", "$.canonical.geoRegion", (candidate) => REGION.test(candidate), "geoRegion must be an ISO 3166-1 or ISO 3166-2 code.", result);
-    validateOptionalString(canonical, "cbsaCode", "$.canonical.cbsaCode", (candidate) => CBSA.test(candidate), "cbsaCode must be a five-digit CBSA, non-metro region, or Unknown.", result);
-    validateOptionalString(canonical, "verificationVersion", "$.canonical.verificationVersion", (candidate) => VERSION.test(candidate), "verificationVersion must be SemVer-compatible.", result);
+    validateOptionalString(canonical, "cbsaCode", "$.canonical.cbsaCode", (candidate) => CBSA.test(candidate), "cbsaCode must be a five-digit CBSA, non-metro region, or UNKNOWN.", result);
+    validateOptionalString(canonical, "verificationVersion", "$.canonical.verificationVersion", isVersion, "verificationVersion must be SemVer 2.0 compatible.", result);
   }
 
   const lineage = object(token.lineage);
@@ -106,8 +115,8 @@ function parseToken(input: JsonValue, result: VerificationResult): SpendAttestat
   }
 
   const protocol = object(token.protocol);
-  if (!protocol || !string(protocol.protocolVersion) || !VERSION.test(protocol.protocolVersion)) {
-    invalid(result, "$.protocol.protocolVersion", "protocolVersion must be a SemVer-compatible string.");
+  if (!protocol || !string(protocol.protocolVersion) || !isVersion(protocol.protocolVersion)) {
+    invalid(result, "$.protocol.protocolVersion", "protocolVersion must be a SemVer 2.0 compatible string.");
   }
 
   if (owns(token, "zk")) {
@@ -144,7 +153,15 @@ export async function verifyNativeSpendAttestation(
     invalid(result, "$", `Native spend attestation must be inert JSON: ${snapshot.error ?? "missing JSON value"}`);
     return finalize(result);
   }
-  const token = parseToken(snapshot.value, result);
+  return verifyNativeSpendAttestationSnapshot(snapshot.value, options);
+}
+
+export async function verifyNativeSpendAttestationSnapshot(
+  input: JsonValue,
+  options: NativeVerificationOptions = {}
+): Promise<VerificationResult> {
+  const result = resultFor("crinkl-native-spend-attestation/v1", "1");
+  const token = parseToken(input, result);
   if (!token) return finalize(result);
 
   result.metadata = {
