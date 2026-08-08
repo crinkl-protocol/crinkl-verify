@@ -1,0 +1,40 @@
+{
+  "name": "@crinkl/verify",
+  "version": "0.1.0-alpha.1",
+  "description": "Offline verification for versioned Crinkl spend attestation artifacts.",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "pnpm build && node --test test/*.test.mjs",
+    "test:conformance": "pnpm build && node --test test/native-v1.conformance.test.mjs",
+    "fixtures:check": "node scripts/verify-fixture-provenance.mjs",
+    "pack:dry-run": "npm pack --dry-run"
+  },
+  "dependencies": {
+    "@noble/ed25519": "^2.3.0",
+    "@noble/hashes": "^1.8.0",
+    "json-canonicalize": "^1.1.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}

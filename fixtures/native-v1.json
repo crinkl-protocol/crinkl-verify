@@ -1,0 +1,83 @@
+{
+  "sourceCommit": "d81a68a47170a3fd23712504dece25e38f18b1d8",
+  "case": {
+    "id": "token.spendAttestation.portableV1.hardVerified.basic",
+    "token": {
+      "tokenType": "SPEND_ATTESTATION",
+      "schemaVersion": 1,
+      "spendId": "spend-1",
+      "wallet": "wallet-1",
+      "canonical": {
+        "status": "HARD_VERIFIED",
+        "storeHash": "sha256:bea4a788c3baf302cd44157d639ce4a769f72660207da084a1449e65531c906b",
+        "timestamp": "2024-01-01T00:00:00.000Z",
+        "date": "2024-01-01",
+        "totalCents": "1234",
+        "currency": "USD",
+        "verificationVersion": "1.0.0"
+      },
+      "lineage": {
+        "headEventHash": "1a512042feed3950aabe2251fcf73683a8078630bdc94c574dcff1970dd2c552",
+        "eventCount": 2
+      },
+      "protocol": {
+        "protocolVersion": "1.0.0-rc.1"
+      },
+      "signatures": {
+        "issuedBy": "crinkl-authority",
+        "publicKey": "11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=",
+        "tokenHash": "36ae0f09f8805f38de2cc51fd4a81528fa61010f44167ee7df133865e5f997fa",
+        "signature": "1Pex4LnVlPR8NH59iFZB3jD3dy/9hu/jJpamdBZI5nbVJAPlM+N/PNE2mODT3qIFCyA5BZgCYHq4UhScQtuuAg=="
+      }
+    }
+  },
+  "hashOnlyCases": [
+    {
+      "id": "tokenHash.spendAttestation.unsigned.v1",
+      "unsignedToken": {
+        "tokenType": "SPEND_ATTESTATION",
+        "schemaVersion": 1,
+        "spendId": "spend-1",
+        "wallet": "wallet-1",
+        "canonical": {
+          "status": "HARD_VERIFIED",
+          "storeHash": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "date": "2024-01-01",
+          "totalCents": "1234",
+          "currency": "USD",
+          "timestamp": "2024-01-01T00:00:00.000Z",
+          "verificationVersion": "1.0.0"
+        },
+        "lineage": {
+          "headEventHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "eventCount": 3
+        },
+        "protocol": { "protocolVersion": "1.0.0-rc.1" }
+      },
+      "expectedTokenHashHex": "a8e643def40ef692899c0324c28df732503862d0f6c8ca8b0a600d9412c04e22"
+    },
+    {
+      "id": "tokenHash.spendAttestation.unsigned.noWallet.v1",
+      "unsignedToken": {
+        "tokenType": "SPEND_ATTESTATION",
+        "schemaVersion": 1,
+        "spendId": "spend-1",
+        "canonical": {
+          "status": "HARD_VERIFIED",
+          "storeHash": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "date": "2024-01-01",
+          "totalCents": "1234",
+          "currency": "USD",
+          "timestamp": "2024-01-01T00:00:00.000Z",
+          "verificationVersion": "1.0.0"
+        },
+        "lineage": {
+          "headEventHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "eventCount": 3
+        },
+        "protocol": { "protocolVersion": "1.0.0-rc.1" }
+      },
+      "expectedTokenHashHex": "7c6bea7a05309c6b333515292c8648e0625aef6f959de69e0d09ff570839cad6"
+    }
+  ]
+}
