@@ -19,7 +19,7 @@ const result = await verifyNativeSpendAttestation(token, {
     protocolVersion === "1.0.0-rc.1"
 });
 
-if (!result.cryptographicallyValid || result.issuerAuthorized !== true) {
+if (!result.cryptographicallyValid || result.issuerAuthorized !== true || result.errors.length > 0) {
   throw new Error(result.errors.map((error) => error.code).join(", "));
 }
 

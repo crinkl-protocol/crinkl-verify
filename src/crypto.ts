@@ -4,6 +4,7 @@ import { sha512 } from "@noble/hashes/sha512";
 import { canonicalize } from "json-canonicalize";
 
 const encoder = new TextEncoder();
+const CANONICAL_BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
 if (!ed25519.etc.sha512Sync) {
   ed25519.etc.sha512Sync = (...messages: Uint8Array[]) => sha512(ed25519.etc.concatBytes(...messages));
@@ -31,9 +32,13 @@ export function hexToBytes(hex: string): Uint8Array | undefined {
 export function base64ToBytes(value: string): Uint8Array | undefined {
   try {
     const decode = globalThis.atob;
-    if (typeof decode !== "function") return undefined;
+    const encode = globalThis.btoa;
+    if (typeof decode !== "function" || typeof encode !== "function" || !CANONICAL_BASE64.test(value)) return undefined;
     const decoded = decode(value);
-    return Uint8Array.from(decoded, (char) => char.charCodeAt(0));
+    const bytes = Uint8Array.from(decoded, (char) => char.charCodeAt(0));
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return encode(binary) === value ? bytes : undefined;
   } catch {
     return undefined;
   }

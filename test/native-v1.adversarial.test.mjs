@@ -121,6 +121,23 @@ test("enforces exact unsigned signatures and all present V1 optional fields", as
   assert.equal(extendedResult.issuerAuthorized, true);
 });
 
+test("rejects noncanonical RFC 4648 Base64 aliases", async () => {
+  const whitespaceKey = structuredClone(fixture.case.token);
+  whitespaceKey.signatures.publicKey = ` ${whitespaceKey.signatures.publicKey}`;
+  const whitespaceResult = await verifyNativeSpendAttestation(whitespaceKey, { issuerTrust: trust });
+  assert.equal(whitespaceResult.errors[0].code, "SCHEMA_INVALID");
+
+  const unpaddedSignature = structuredClone(fixture.case.token);
+  unpaddedSignature.signatures.signature = unpaddedSignature.signatures.signature.slice(0, -2);
+  const unpaddedResult = await verifyNativeSpendAttestation(unpaddedSignature, { issuerTrust: trust });
+  assert.equal(unpaddedResult.errors[0].code, "SCHEMA_INVALID");
+
+  const alteredPadBits = structuredClone(fixture.case.token);
+  alteredPadBits.signatures.signature = `${alteredPadBits.signatures.signature.slice(0, -3)}h==`;
+  const alteredPadBitsResult = await verifyNativeSpendAttestation(alteredPadBits, { issuerTrust: trust });
+  assert.equal(alteredPadBitsResult.errors[0].code, "SCHEMA_INVALID");
+});
+
 test("keeps unknown signed extensions hash-bound while rejecting unsigned signature extras", async () => {
   const token = structuredClone(fixture.case.token);
   token.extension = { future: "signed" };
