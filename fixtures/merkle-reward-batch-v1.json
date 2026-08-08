@@ -1,0 +1,34 @@
+{
+  "sourceCommit": "5eb7c6360333adb430ead7f2f105f0494cd096c3",
+  "case": {
+    "id": "merkle.batch.schemaV1.three-leaves.padded",
+    "schemaVersion": 1,
+    "leaves": [
+      {
+        "wallet": "wallet-b",
+        "totalPoints": "200",
+        "batchId": "batch-1"
+      },
+      {
+        "wallet": "wallet-a",
+        "totalPoints": "150",
+        "batchId": "batch-1"
+      },
+      {
+        "wallet": "wallet-c",
+        "totalPoints": "110",
+        "batchId": "batch-1"
+      }
+    ],
+    "expectedRootHex": "2aa7855f6748c06228bb03a465d72448a99241b233512a4b6297a6bc8755abd3",
+    "proof": {
+      "wallet": "wallet-b",
+      "expectedLeafCanonical": "{\"batchId\":\"batch-1\",\"totalPoints\":\"200\",\"wallet\":\"wallet-b\"}",
+      "expectedLeafHashHex": "ce601353e82f5b8f0599df8db8c17af9ef1afacc3cbf5764964f683b58de1253",
+      "expectedPathHex": [
+        "f7ab97b69408e9fec8845ed15c8264af78627f1c6f52ce2214a38f7db85cb220",
+        "405e7140956e78c7d296a914c6bbe64971af81dc15d8aecb06670d529c620463"
+      ]
+    }
+  }
+}
