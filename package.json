@@ -26,7 +26,7 @@
     "lint": "tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "pnpm build && node --test test/*.test.mjs",
-    "test:conformance": "pnpm build && node --test test/native-v1.conformance.test.mjs",
+    "test:conformance": "pnpm build && node --test test/*.conformance.test.mjs",
     "fixtures:check": "node scripts/verify-fixture-provenance.mjs",
     "pack:dry-run": "npm pack --dry-run"
   },

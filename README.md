@@ -2,9 +2,10 @@
 
 Verify Crinkl spend attestation tokens and reward commitments locally — no network, no accounts.
 
-`0.1.0-alpha.1` verifies the released native `SpendAttestationTokenV1` profile
-and the `RewardCommitmentTokenV1` profile offline, and composes the two into
-tiered spend + reward-commitment verification. W3C VC verification is
+`0.1.0-alpha.1` verifies the released native `SpendAttestationTokenV1` and
+`SpendAttestationTokenV2` profiles and the `RewardCommitmentTokenV1` profile
+offline, and composes native Spend Token and reward-commitment verification
+into tiered spend + reward-commitment verification. W3C VC verification is
 intentionally experimental and fails closed until a released Crinkl profile
 bundle pins its context, schemas, vectors, issuer-key history, and
 status/refresh rules.
@@ -12,7 +13,7 @@ status/refresh rules.
 ## Quick start
 
 ```ts
-import { verifyNativeSpendAttestation } from "@crinkl/verify";
+import { verifyNativeSpendAttestation, verifySpendHolderControl } from "@crinkl/verify";
 
 const result = await verifyNativeSpendAttestation(token, {
   issuerTrust: ({ issuedBy, publicKeyBase64, protocolVersion }) =>
@@ -28,16 +29,31 @@ if (!result.cryptographicallyValid || result.issuerAuthorized !== true || result
 // This proves an authorized historical issuance snapshot only. Do not treat
 // it as accepted for a current reward, claim, or eligibility decision without
 // separately obtaining and applying your currentness policy/evidence.
+
+const holderControl = await verifySpendHolderControl(token, challenge, proof, {
+  issuerTrust: ({ issuedBy, publicKeyBase64 }) => localIssuerTrust(issuedBy, publicKeyBase64),
+  expectedContext: {
+    spendTokenHash: challenge.spendTokenHash,
+    scopeId: expectedScopeId,
+    requestContextHash: expectedRequestContextHash,
+    purpose: "TOKEN_PRESENTATION",
+    verifierId: "your-verifier-id"
+  },
+  now: "2026-07-28T00:02:00.000Z",
+  authenticateChallenge: (issuedChallenge) => localChallengeStore.authenticates(issuedChallenge),
+  // Atomically consume the outstanding (verifierId, nonceBase64) entry.
+  consumeChallenge: (issuedChallenge) => localChallengeStore.consumeOnce(issuedChallenge)
+});
 ```
 
 `cryptographicallyValid`, `issuerAuthorized`, `current`, and `accepted` are
-separate values. Native V1 is an issuance snapshot, so offline verification
+separate values. Native V1 and V2 are issuance snapshots, so offline verification
 reports currentness as `"unknown"` and does not mark the artifact accepted for
 current reliance. The calling application supplies currentness/acceptance
 policy and issuer trust; this package does not fetch keys, DIDs, contexts,
 status lists, or refresh endpoints.
 
-Native V1 defaults to the released `protocolVersion` `1.0.0-rc.1`. Supply
+Native V1 and V2 default to the released `protocolVersion` `1.0.0-rc.1`. Supply
 `supportedProtocolVersions` only when the calling application deliberately
 pins a different explicit set.
 
@@ -85,13 +101,18 @@ occurred.**
 
 ## Scope
 
-- Native V1: RFC 8785 JCS unsigned-token hashing, Ed25519 verification over
+- Native V1 and V2: RFC 8785 JCS unsigned-token hashing, Ed25519 verification over
   raw SHA-256 digest bytes, caller-owned issuer authorization, and explicit
   version/schema failures.
+- V2 holder control: `holderBinding` is optional and signed. A V2 Spend Token
+  without it remains valid, but portable holder control is unavailable.
+  `verifySpendHolderControl` checks the exact caller-owned request context,
+  authenticated fresh challenge, committed holder key, and Ed25519 signature
+  over the raw challenge digest. It has no network or challenge store; its
+  required `consumeChallenge` callback must durably atomically consume the
+  outstanding challenge before it resolves `true`.
 - W3C VC: experimental API scaffold only; returns
   `UNSUPPORTED_PROFILE_VERSION` without network I/O.
-- Native schema V2/holder binding: deliberately unsupported until its adopted
-  protocol profile is separately pinned.
 
 Native V1 fixtures are pinned to
 `crinkl-protocol@d81a68a47170a3fd23712504dece25e38f18b1d8`. The reward-batch

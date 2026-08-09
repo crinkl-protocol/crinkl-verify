@@ -57,9 +57,11 @@ for (const binding of provenance.fixtureBindings) {
   const sourceContent = sourceArtifacts.get(`${commit}:${binding.sourceArtifact}`);
   if (!sourceContent) throw new Error(`Fixture binding references an unpinned source artifact: ${commit}:${binding.sourceArtifact}`);
   const source = JSON.parse(sourceContent);
-  const sourceCase = source.cases?.find((candidate) => candidate.id === binding.sourceCaseId);
+  const sourceCase = binding.sourceCaseId === undefined
+    ? source
+    : source.cases?.find((candidate) => candidate.id === binding.sourceCaseId);
   if (!sourceCase) throw new Error(`Fixture binding source case not found: ${binding.sourceCaseId}`);
-  let expected = atPath(sourceCase, binding.sourcePath, `source:${binding.sourceCaseId}`);
+  let expected = atPath(sourceCase, binding.sourcePath, `source:${binding.sourceCaseId ?? "root"}`);
   if (binding.sourceEncoding === "json") expected = JSON.parse(expected);
   const actual = atPath(fixture, binding.fixturePath, `fixture:${binding.fixture}`);
   if (!isDeepStrictEqual(actual, expected)) {
