@@ -3,6 +3,7 @@ export {
   computeNativeSpendAttestationTokenHash,
   verifyNativeSpendAttestation
 } from "./native-v1.js";
+export { verifySpendHolderControl } from "./holder-control-v2.js";
 export { verifyW3cSpendAttestation } from "./w3c-v1.js";
 export { verifyRewardCommitmentV1 } from "./reward-commitment-v1.js";
 export { verifySpendWithRewardCommitment } from "./spend-reward-commitment.js";
@@ -25,7 +26,11 @@ export async function verify(input: unknown, options: VerificationOptions = {}):
     return finalize(result);
   }
   const format = detectArtifactFormatFromSnapshot(snapshot.value);
-  if (format === "crinkl-native-spend-attestation/v1") return verifyNativeSpendAttestationSnapshot(snapshot.value, options);
+  if (format === "crinkl-native-spend-attestation/v1" || format === "crinkl-native-spend-attestation/v2") return verifyNativeSpendAttestationSnapshot(snapshot.value, options);
+  if (snapshot.value !== null && typeof snapshot.value === "object" && !Array.isArray(snapshot.value) &&
+    (snapshot.value as Record<string, unknown>).tokenType === "SPEND_ATTESTATION") {
+    return verifyNativeSpendAttestationSnapshot(snapshot.value, options);
+  }
   if (format === "w3c-vc-crinkl-spend-attestation/v1") return verifyW3cSpendAttestation(snapshot.value, options);
   const result = resultFor("unknown", "unknown");
   addError(result, "UNSUPPORTED_FORMAT", "Input is not a supported Crinkl verification artifact.", "input");

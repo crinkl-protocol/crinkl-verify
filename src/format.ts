@@ -13,6 +13,9 @@ export function detectArtifactFormatFromSnapshot(input: JsonValue): ArtifactForm
   if (value.tokenType === "SPEND_ATTESTATION" && value.schemaVersion === 1) {
     return "crinkl-native-spend-attestation/v1";
   }
+  if (value.tokenType === "SPEND_ATTESTATION" && value.schemaVersion === 2) {
+    return "crinkl-native-spend-attestation/v2";
+  }
   const types = Array.isArray(value.type) ? value.type : [];
   if (types.includes("VerifiableCredential") && types.includes("SpendAttestationCredential")) {
     return "w3c-vc-crinkl-spend-attestation/v1";

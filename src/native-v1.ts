@@ -7,7 +7,7 @@ import {
 } from "./crypto.js";
 import { createInertJsonSnapshot, type JsonValue } from "./json.js";
 import { addError, finalize, resultFor } from "./result.js";
-import type { NativeVerificationOptions, SpendAttestationTokenV1, VerificationResult } from "./types.js";
+import type { NativeVerificationOptions, SpendAttestationToken, VerificationResult } from "./types.js";
 
 const DEFAULT_SUPPORTED_PROTOCOL_VERSIONS = ["1.0.0-rc.1"] as const;
 const HASH = /^[0-9a-f]{64}$/;
@@ -83,14 +83,16 @@ function validateCommitments(value: JsonValue | undefined, result: VerificationR
   }
 }
 
-function parseToken(input: JsonValue, result: VerificationResult): SpendAttestationTokenV1 | undefined {
+function parseToken(input: JsonValue, result: VerificationResult): SpendAttestationToken | undefined {
   const token = object(input);
   if (!token) {
     invalid(result, "$", "Native spend attestation must be a JSON object.");
     return undefined;
   }
   if (token.tokenType !== "SPEND_ATTESTATION") invalid(result, "$.tokenType", "Expected SPEND_ATTESTATION.");
-  if (token.schemaVersion !== 1) invalid(result, "$.schemaVersion", "Expected native schemaVersion 1.");
+  if (token.schemaVersion !== 1 && token.schemaVersion !== 2) {
+    addError(result, "UNKNOWN_SCHEMA_VERSION", "Native Spend Attestation schemaVersion is unsupported.", "policy", "$.schemaVersion");
+  }
   if (!string(token.spendId)) invalid(result, "$.spendId", "spendId must be a non-empty string.");
   validateOptionalString(token, "wallet", "$.wallet", () => true, "wallet must be a non-empty string.", result);
 
@@ -128,11 +130,27 @@ function parseToken(input: JsonValue, result: VerificationResult): SpendAttestat
     }
   }
 
+  if (token.schemaVersion === 2 && owns(token, "holderBinding")) {
+    const holderBinding = object(token.holderBinding);
+    if (!holderBinding || !exactlyKeys(holderBinding, ["scheme", "commitment"]) ||
+      holderBinding.scheme !== "crinkl.holder.v2" || !string(holderBinding.commitment) ||
+      !/^sha256:[0-9a-f]{64}$/.test(holderBinding.commitment)) {
+      invalid(result, "$.holderBinding", "holderBinding must contain the supported scheme and a lowercase sha256 commitment.");
+    }
+  }
+
   const signatures = object(token.signatures);
   if (!signatures || !exactlyKeys(signatures, ["issuedBy", "publicKey", "tokenHash", "signature"]) || !string(signatures.issuedBy) || !string(signatures.publicKey) || !string(signatures.tokenHash) || !HASH.test(signatures.tokenHash) || !string(signatures.signature)) {
     invalid(result, "$.signatures", "signatures must contain exactly issuedBy, publicKey, tokenHash, and signature.");
   }
-  return result.errors.length === 0 ? (token as unknown as SpendAttestationTokenV1) : undefined;
+  return result.errors.length === 0 ? (token as unknown as SpendAttestationToken) : undefined;
+}
+
+function resultForNativeInput(input: JsonValue): VerificationResult {
+  const token = object(input);
+  if (token?.schemaVersion === 1) return resultFor("crinkl-native-spend-attestation/v1", "1");
+  if (token?.schemaVersion === 2) return resultFor("crinkl-native-spend-attestation/v2", "2");
+  return resultFor("unknown", "unknown");
 }
 
 function computeHashFromSnapshot(token: Record<string, JsonValue>): string {
@@ -147,8 +165,8 @@ export async function verifyNativeSpendAttestation(
   input: unknown,
   options: NativeVerificationOptions = {}
 ): Promise<VerificationResult> {
-  const result = resultFor("crinkl-native-spend-attestation/v1", "1");
   const snapshot = createInertJsonSnapshot(input);
+  const result = snapshot.value === undefined ? resultFor("unknown", "unknown") : resultForNativeInput(snapshot.value);
   if (snapshot.error || snapshot.value === undefined) {
     invalid(result, "$", `Native spend attestation must be inert JSON: ${snapshot.error ?? "missing JSON value"}`);
     return finalize(result);
@@ -160,7 +178,7 @@ export async function verifyNativeSpendAttestationSnapshot(
   input: JsonValue,
   options: NativeVerificationOptions = {}
 ): Promise<VerificationResult> {
-  const result = resultFor("crinkl-native-spend-attestation/v1", "1");
+  const result = resultForNativeInput(input);
   const token = parseToken(input, result);
   if (!token) return finalize(result);
 
@@ -239,7 +257,7 @@ export async function verifyNativeSpendAttestationSnapshot(
   return finalize(result);
 }
 
-/** Computes SHA-256 over RFC 8785 JCS unsigned native-token bytes. */
+/** Computes SHA-256 over RFC 8785 JCS unsigned native Spend Token bytes. */
 export function computeNativeSpendAttestationTokenHash(token: Record<string, unknown>): string {
   const snapshot = createInertJsonSnapshot(token);
   if (snapshot.error || !snapshot.value || !object(snapshot.value)) {

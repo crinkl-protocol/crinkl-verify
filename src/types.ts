@@ -2,6 +2,7 @@ import type { JsonValue } from "./json.js";
 
 export type ArtifactFormat =
   | "crinkl-native-spend-attestation/v1"
+  | "crinkl-native-spend-attestation/v2"
   | "w3c-vc-crinkl-spend-attestation/v1";
 
 export type VerificationErrorCode =
@@ -149,6 +150,115 @@ export interface SpendAttestationTokenV1 {
     signature: string;
   };
   [key: string]: unknown;
+}
+
+/** Signed optional holder commitment defined by SpendAttestationTokenV2. */
+export interface SpendHolderBindingV2 {
+  scheme: "crinkl.holder.v2";
+  commitment: `sha256:${string}`;
+}
+
+/**
+ * SpendAttestationTokenV2 retains the V1 shape and adds an optional signed
+ * holderBinding. Its absence does not invalidate the Spend Token.
+ */
+export interface SpendAttestationTokenV2 {
+  tokenType: "SPEND_ATTESTATION";
+  schemaVersion: 2;
+  spendId: string;
+  wallet?: string;
+  canonical: {
+    status: "HARD_VERIFIED" | "CORRECTED" | "INVALIDATED";
+    storeHash?: string;
+    date?: string;
+    totalCents?: string;
+    currency?: string;
+    timestamp?: string;
+    geoRegion?: string;
+    cbsaCode?: string;
+    verificationVersion?: string;
+    [key: string]: unknown;
+  };
+  lineage: { headEventHash: string; eventCount: number; [key: string]: unknown };
+  protocol: { protocolVersion: string; [key: string]: unknown };
+  zk?: { commitments?: ZkCommitments; [key: string]: unknown };
+  holderBinding?: SpendHolderBindingV2;
+  signatures: {
+    issuedBy: string;
+    publicKey: string;
+    tokenHash: string;
+    signature: string;
+  };
+  [key: string]: unknown;
+}
+
+export type SpendAttestationToken = SpendAttestationTokenV1 | SpendAttestationTokenV2;
+
+export type SpendHolderPurposeV2 =
+  | "TOKEN_PRESENTATION"
+  | "CAMPAIGN_PROOF_AUTHORIZATION"
+  | "CAMPAIGN_ACTION_AUTHORIZATION";
+
+export interface SpendHolderChallengeV2 {
+  domain: "crinkl.spend-holder-challenge.v2";
+  schemaVersion: 2;
+  nonceBase64: string;
+  spendTokenHash: `sha256:${string}`;
+  scopeId: `sha256:${string}`;
+  requestContextHash: `sha256:${string}`;
+  purpose: SpendHolderPurposeV2;
+  verifierId: string;
+  issuedAt: string;
+  expiresAt: string;
+}
+
+export interface SpendHolderControlProofV2 {
+  schemaVersion: 2;
+  scheme: "crinkl.holder.v2";
+  spendTokenHash: `sha256:${string}`;
+  scopeId: `sha256:${string}`;
+  challengeId: `sha256:${string}`;
+  holderPublicKeyBase64: string;
+  signatureBase64: string;
+}
+
+export interface SpendHolderExpectedContextV2 {
+  spendTokenHash: `sha256:${string}`;
+  scopeId: `sha256:${string}`;
+  requestContextHash: `sha256:${string}`;
+  purpose: SpendHolderPurposeV2;
+  verifierId: string;
+}
+
+/** The relying verifier owns challenge authentication and atomic consumption. */
+export interface SpendHolderControlVerificationOptions extends NativeVerificationOptions {
+  expectedContext: SpendHolderExpectedContextV2;
+  now: string;
+  authenticateChallenge: (challenge: Readonly<SpendHolderChallengeV2>) => boolean | Promise<boolean>;
+  /**
+   * Atomically consume the authenticated outstanding `(verifierId, nonceBase64)`
+   * challenge. It may resolve `true` only after durable consumption succeeds.
+   */
+  consumeChallenge: (challenge: Readonly<SpendHolderChallengeV2>) => boolean | Promise<boolean>;
+}
+
+export type SpendHolderControlDecisionCode =
+  | "holder_control_verified"
+  | "holder_token_invalid"
+  | "holder_control_unavailable"
+  | "holder_challenge_invalid"
+  | "holder_expected_context_mismatch"
+  | "holder_challenge_expired"
+  | "holder_challenge_replayed"
+  | "holder_commitment_mismatch"
+  | "holder_challenge_id_mismatch"
+  | "holder_proof_binding_mismatch"
+  | "holder_signature_invalid";
+
+export interface SpendHolderControlVerificationResult {
+  accepted: boolean;
+  code: SpendHolderControlDecisionCode;
+  tokenVerification: VerificationResult;
 }
 
 /**

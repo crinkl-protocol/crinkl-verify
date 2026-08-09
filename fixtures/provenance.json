@@ -56,6 +56,12 @@
       "commit": "5eb7c6360333adb430ead7f2f105f0494cd096c3",
       "sha256": "d6f05e856d49a95c12a1cf4216f02b1487b6c4b8b7c6af66222d56e72a62d16e",
       "usedBy": "system-stream.ts implementation (Integrity Envelope eventHash/signature rules; Signature/PublicKey/Hash scalar encodings)"
+    },
+    {
+      "path": "conformance/v2/vectors/token.spendAttestation.holderBinding.v2.json",
+      "commit": "5eb7c6360333adb430ead7f2f105f0494cd096c3",
+      "sha256": "3b251ad7498cd8b8c67ba31646f870972cbe84435a9876ee8512b586034e8bfe",
+      "usedBy": "fixtures/spend-attestation-holder-binding-v2.json (SpendAttestationTokenV2 holder-binding and holder-control conformance)"
     }
   ],
   "fixtureBindings": [
@@ -131,6 +137,13 @@
       "sourceArtifact": "conformance/v1/vectors/merkle.rewardBatch.schemaV2.rewardEventsRoot.json",
       "commit": "5eb7c6360333adb430ead7f2f105f0494cd096c3",
       "sourceCaseId": "merkle.rewardEventsRoot.schemaV2.sorted-by-spendId",
+      "sourcePath": []
+    },
+    {
+      "fixture": "fixtures/spend-attestation-holder-binding-v2.json",
+      "fixturePath": ["vector"],
+      "commit": "5eb7c6360333adb430ead7f2f105f0494cd096c3",
+      "sourceArtifact": "conformance/v2/vectors/token.spendAttestation.holderBinding.v2.json",
       "sourcePath": []
     }
   ]

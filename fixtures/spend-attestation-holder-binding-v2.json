@@ -1,0 +1,143 @@
+{
+  "sourceCommit": "5eb7c6360333adb430ead7f2f105f0494cd096c3",
+  "vector": {
+  "kind": "token.spendAttestation.holderBinding.v2",
+  "constants": {
+    "holderCommitmentDomainUtf8": "crinkl.holder.v2:",
+    "challengeDomain": "crinkl.spend-holder-challenge.v2",
+    "maximumChallengeLifetimeSeconds": 300,
+    "signatureInput": "RAW_SHA256_CHALLENGE_DIGEST_BYTES"
+  },
+  "keyMaterial": {
+    "privateKeySeedHex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+    "holderPublicKeyBase64": "11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=",
+    "wrongPublicKeyBase64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+  },
+  "issuerKeyMaterial": {
+    "privateKeySeedHex": "4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb",
+    "publicKeyBase64": "PUAXw+hDiVqStwqnTRt+vJyYLM8uxJaMwM1V8Sr0Zgw="
+  },
+  "valid": {
+    "spendId": "spend-holder-vector-1",
+    "expectedHolderCommitment": "sha256:4f84bc06f2618747d6ed249db8f398c0a2586ba20b065b89bf1e5a4c83f640fd",
+    "unsignedToken": {
+      "tokenType": "SPEND_ATTESTATION",
+      "schemaVersion": 2,
+      "spendId": "spend-holder-vector-1",
+      "canonical": {
+        "status": "HARD_VERIFIED"
+      },
+      "lineage": {
+        "headEventHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "eventCount": 1
+      },
+      "protocol": {
+        "protocolVersion": "1.0.0-rc.1"
+      },
+      "holderBinding": {
+        "scheme": "crinkl.holder.v2",
+        "commitment": "sha256:4f84bc06f2618747d6ed249db8f398c0a2586ba20b065b89bf1e5a4c83f640fd"
+      }
+    },
+    "expectedTokenCanonical": "{\"canonical\":{\"status\":\"HARD_VERIFIED\"},\"holderBinding\":{\"commitment\":\"sha256:4f84bc06f2618747d6ed249db8f398c0a2586ba20b065b89bf1e5a4c83f640fd\",\"scheme\":\"crinkl.holder.v2\"},\"lineage\":{\"eventCount\":1,\"headEventHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"protocol\":{\"protocolVersion\":\"1.0.0-rc.1\"},\"schemaVersion\":2,\"spendId\":\"spend-holder-vector-1\",\"tokenType\":\"SPEND_ATTESTATION\"}",
+    "expectedSpendTokenHash": "sha256:57d90e95eb7816dfd69ec4af3c284105cbcc9c5e6fd70559f3d3830f8504c8dc",
+    "issuerSignature": {
+      "issuedBy": "issuer-vector-1",
+      "publicKeyBase64": "PUAXw+hDiVqStwqnTRt+vJyYLM8uxJaMwM1V8Sr0Zgw=",
+      "tokenHashHex": "57d90e95eb7816dfd69ec4af3c284105cbcc9c5e6fd70559f3d3830f8504c8dc",
+      "signatureBase64": "4YHrZRXDOBVKA+Pw3VobvH9Ay0D6mg5Kh6EXWy3BlwR+KdMqS1Iq9ODN8p0z1jlwJ5yhCXJkGE2OZzBXs93ZBQ=="
+    },
+    "challenge": {
+      "domain": "crinkl.spend-holder-challenge.v2",
+      "schemaVersion": 2,
+      "nonceBase64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+      "spendTokenHash": "sha256:57d90e95eb7816dfd69ec4af3c284105cbcc9c5e6fd70559f3d3830f8504c8dc",
+      "scopeId": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "requestContextHash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "purpose": "CAMPAIGN_PROOF_AUTHORIZATION",
+      "verifierId": "crinkl-verifier-vector-1",
+      "issuedAt": "2026-07-28T00:00:00.000Z",
+      "expiresAt": "2026-07-28T00:05:00.000Z"
+    },
+    "expectedChallengeCanonical": "{\"domain\":\"crinkl.spend-holder-challenge.v2\",\"expiresAt\":\"2026-07-28T00:05:00.000Z\",\"issuedAt\":\"2026-07-28T00:00:00.000Z\",\"nonceBase64\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=\",\"purpose\":\"CAMPAIGN_PROOF_AUTHORIZATION\",\"requestContextHash\":\"sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"schemaVersion\":2,\"scopeId\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"spendTokenHash\":\"sha256:57d90e95eb7816dfd69ec4af3c284105cbcc9c5e6fd70559f3d3830f8504c8dc\",\"verifierId\":\"crinkl-verifier-vector-1\"}",
+    "expectedChallengeId": "sha256:0af06e5de9b07f2094a50476e5197cfe436d6d8ed6b0f56c5b293c8b963dde22",
+    "holderProof": {
+      "schemaVersion": 2,
+      "scheme": "crinkl.holder.v2",
+      "spendTokenHash": "sha256:57d90e95eb7816dfd69ec4af3c284105cbcc9c5e6fd70559f3d3830f8504c8dc",
+      "scopeId": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "challengeId": "sha256:0af06e5de9b07f2094a50476e5197cfe436d6d8ed6b0f56c5b293c8b963dde22",
+      "holderPublicKeyBase64": "11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=",
+      "signatureBase64": "Tzg/AmiXbr1aYzBBYckuAah8cv4nuJ34rEWDmM6sHqNR2DIqjfT4Y8qqnOYGEaEWrYf1gyq50msZoN9oMgidCA=="
+    },
+    "verificationTime": "2026-07-28T00:02:00.000Z",
+    "challengePreviouslyConsumed": false,
+    "expectedDecision": {
+      "accepted": true,
+      "code": "holder_control_verified"
+    }
+  },
+  "negativeCases": [
+    {
+      "id": "holder-binding-wrong-key",
+      "mutation": "replace holderProof.holderPublicKeyBase64 with keyMaterial.wrongPublicKeyBase64",
+      "expectedDecision": {
+        "accepted": false,
+        "code": "holder_commitment_mismatch"
+      }
+    },
+    {
+      "id": "holder-binding-wrong-signature",
+      "mutation": "flip one byte in holderProof.signatureBase64",
+      "expectedDecision": {
+        "accepted": false,
+        "code": "holder_signature_invalid"
+      }
+    },
+    {
+      "id": "holder-binding-changed-scope",
+      "mutation": "replace challenge.scopeId with sha256:cccc... without replacing the proof",
+      "expectedDecision": {
+        "accepted": false,
+        "code": "holder_challenge_id_mismatch"
+      }
+    },
+    {
+      "id": "holder-binding-changed-request",
+      "mutation": "replace challenge.requestContextHash without replacing the proof",
+      "expectedDecision": {
+        "accepted": false,
+        "code": "holder_challenge_id_mismatch"
+      }
+    },
+    {
+      "id": "holder-binding-expired",
+      "mutation": "set verificationTime to 2026-07-28T00:05:00.000Z",
+      "expectedDecision": {
+        "accepted": false,
+        "code": "holder_challenge_expired"
+      }
+    },
+    {
+      "id": "holder-binding-replayed",
+      "mutation": "set challengePreviouslyConsumed to true",
+      "expectedDecision": {
+        "accepted": false,
+        "code": "holder_challenge_replayed"
+      }
+    },
+    {
+      "id": "holder-binding-absent",
+      "mutation": "use a valid schema-v2 Spend token with holderBinding absent",
+      "expectedTokenDecision": {
+        "accepted": true,
+        "code": "spend_token_valid"
+      },
+      "expectedHolderDecision": {
+        "accepted": false,
+        "code": "holder_control_unavailable"
+      }
+    }
+  ]
+  }
+}
