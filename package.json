@@ -1,8 +1,7 @@
 {
   "name": "@crinkl/verify",
   "version": "0.1.0-alpha.1",
-  "description": "Verify Crinkl spend attestation tokens and reward commitments locally — no network, no accounts.",
-  "private": true,
+  "description": "Verify Crinkl spend attestation tokens and reward commitments locally, with optional caller-directed chain RPC evidence.",
   "type": "module",
   "exports": {
     ".": {
@@ -18,6 +17,25 @@
   ],
   "license": "Apache-2.0",
   "author": "PriceChain Labs <support@crinkl.xyz>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/crinkl-protocol/crinkl-verify.git"
+  },
+  "homepage": "https://github.com/crinkl-protocol/crinkl-verify#readme",
+  "bugs": {
+    "url": "https://github.com/crinkl-protocol/crinkl-verify/issues"
+  },
+  "keywords": [
+    "crinkl",
+    "spend-attestation",
+    "verification",
+    "ed25519",
+    "rfc8785"
+  ],
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=20"
   },
@@ -25,8 +43,8 @@
     "build": "tsc -p tsconfig.json",
     "lint": "tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "pnpm build && node --test test/*.test.mjs",
-    "test:conformance": "pnpm build && node --test test/*.conformance.test.mjs",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "test:conformance": "npm run build && node --test test/*.conformance.test.mjs",
     "fixtures:check": "node scripts/verify-fixture-provenance.mjs",
     "pack:dry-run": "npm pack --dry-run"
   },
