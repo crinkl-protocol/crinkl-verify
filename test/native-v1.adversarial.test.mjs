@@ -177,6 +177,45 @@ test("enforces exact unsigned signatures and all present V1 optional fields", as
   assert.equal(extendedResult.issuerAuthorized, true);
 });
 
+test("requires three ZK commitments and accepts independent optional commitments and legacy geography", async () => {
+  const required = { C_store: "opaque-store", C_total: "opaque-total", C_dayIndex: "opaque-day" };
+  for (const [name, optional] of [
+    ["none", {}],
+    ["currency", { C_currency: "opaque-currency" }],
+    ["geo region", { C_geoRegion: "opaque-geo" }],
+    ["CBSA code", { C_cbsaCode: "opaque-cbsa" }]
+  ]) {
+    const token = structuredClone(fixture.case.token);
+    token.zk = { commitments: { ...required, ...optional } };
+    await sign(token);
+    const result = await verifyNativeSpendAttestation(token, { issuerTrust: trust });
+    assert.equal(result.cryptographicallyValid, true, name);
+    assert.equal(result.issuerAuthorized, true, name);
+  }
+
+  for (const missing of Object.keys(required)) {
+    const token = structuredClone(fixture.case.token);
+    const commitments = { ...required };
+    delete commitments[missing];
+    token.zk = { commitments };
+    await sign(token);
+    const result = await verifyNativeSpendAttestation(token, { issuerTrust: trust });
+    assert.equal(result.errors[0].code, "SCHEMA_INVALID", missing);
+  }
+
+  for (const [name, geography] of [
+    ["geo region", { geoRegion: "US-CA" }],
+    ["CBSA code", { cbsaCode: "12420" }]
+  ]) {
+    const token = structuredClone(fixture.case.token);
+    Object.assign(token.canonical, geography);
+    await sign(token);
+    const result = await verifyNativeSpendAttestation(token, { issuerTrust: trust });
+    assert.equal(result.cryptographicallyValid, true, name);
+    assert.equal(result.issuerAuthorized, true, name);
+  }
+});
+
 test("enforces SemVer 2.0 numeric identifier rules", async () => {
   for (const version of ["1.0.0-01", "1.0.0-alpha.01", "01.0.0", "1.0.0-alpha..1"]) {
     const protocolToken = structuredClone(fixture.case.token);

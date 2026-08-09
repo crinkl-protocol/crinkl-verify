@@ -269,7 +269,8 @@ export interface ZkCommitments {
   C_store: unknown;
   C_total: unknown;
   C_dayIndex: unknown;
-  C_geoRegion: unknown;
+  C_currency?: unknown;
+  C_geoRegion?: unknown;
   C_cbsaCode?: unknown;
 }
 

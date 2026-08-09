@@ -77,7 +77,7 @@ function validateOptionalString(
 
 function validateCommitments(value: JsonValue | undefined, result: VerificationResult): void {
   const commitments = object(value);
-  const required = ["C_store", "C_total", "C_dayIndex", "C_geoRegion"];
+  const required = ["C_store", "C_total", "C_dayIndex"];
   if (!commitments || !required.every((key) => owns(commitments, key))) {
     invalid(result, "$.zk.commitments", "zk.commitments must contain the required V1 commitment labels.");
   }

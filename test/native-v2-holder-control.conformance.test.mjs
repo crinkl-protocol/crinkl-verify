@@ -191,6 +191,31 @@ test("retains signed V2 extensions in the native token hash preimage", async () 
   assert.deepEqual(result.errors, []);
 });
 
+test("accepts the V2 commitment shape without changing holderBinding or legacy geography behavior", async () => {
+  const required = { C_store: "opaque-store", C_total: "opaque-total", C_dayIndex: "opaque-day" };
+  for (const [name, optional] of [
+    ["none", {}],
+    ["currency", { C_currency: "opaque-currency" }],
+    ["geo region", { C_geoRegion: "opaque-geo" }],
+    ["CBSA code", { C_cbsaCode: "opaque-cbsa" }]
+  ]) {
+    const commitmentToken = structuredClone(valid.unsignedToken);
+    commitmentToken.zk = { commitments: { ...required, ...optional } };
+    const commitmentResult = await verifyNativeSpendAttestation(await signV2(commitmentToken), { issuerTrust: trust });
+    assert.equal(commitmentResult.cryptographicallyValid, true, name);
+    assert.equal(commitmentResult.issuerAuthorized, true, name);
+    assert.deepEqual(commitmentResult.errors, [], name);
+  }
+
+  const legacyGeography = structuredClone(valid.unsignedToken);
+  legacyGeography.canonical.geoRegion = "US-CA";
+  legacyGeography.canonical.cbsaCode = "12420";
+  const legacyResult = await verifyNativeSpendAttestation(await signV2(legacyGeography), { issuerTrust: trust });
+  assert.equal(legacyResult.cryptographicallyValid, true);
+  assert.equal(legacyResult.issuerAuthorized, true);
+  assert.equal(legacyResult.errors.length, 0);
+});
+
 test("independent signed-token tamper probe rejects a changed holder commitment before control verification", async () => {
   const token = completeToken();
   token.holderBinding.commitment = `sha256:${"0".repeat(64)}`;
