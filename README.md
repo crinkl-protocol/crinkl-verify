@@ -4,13 +4,15 @@ Verify Crinkl Spend Attestation Tokens and Reward Commitment Tokens locally,
 without accounts. Verification is offline by default; only an explicitly
 configured reward-chain RPC evidence mode uses the network.
 
-`0.1.0-alpha.1` verifies the released native `SpendAttestationTokenV1` and
-`SpendAttestationTokenV2` profiles and the `RewardCommitmentTokenV1` profile
-offline, and composes native Spend Token and reward-commitment verification
-into tiered spend + reward-commitment verification. W3C VC verification is
-intentionally experimental and fails closed until a released Crinkl profile
-bundle pins its context, schemas, vectors, issuer-key history, and
-status/refresh rules.
+`0.1.0-alpha.1` verifies the released native `SpendAttestationTokenV1`
+profile, the released `SpendAttestationTokenV2` holder-binding profile, and the
+`RewardCommitmentTokenV1` profile offline. It also composes native Spend Token
+and reward-commitment verification into tiered spend + reward-commitment
+verification. The separately documented geography compatibility profile in
+current public specification source is a candidate, not an immutable released
+profile. W3C VC verification is intentionally experimental and fails closed
+until a released Crinkl profile bundle pins its context, schemas, vectors,
+issuer-key history, and status/refresh rules.
 
 ## Install
 
