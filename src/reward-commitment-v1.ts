@@ -553,7 +553,10 @@ export async function verifyRewardCommitmentV1(input: unknown, options: RewardCo
       replay = await replaySystemStreamSegment(history.events, token.chainId, options.authorityTrust);
     }
   }
-  result.systemStreamValid = replay.integrityValid && !historyInvalid;
+  const replayRejected = replay.errors.some(
+    (error) => error.code === "SYSTEM_STREAM_INVALID" || error.code === "AUTHORITY_INVALID"
+  );
+  result.systemStreamValid = replay.integrityValid && !historyInvalid && !replayRejected;
   for (const error of replay.errors) addError(result, error.code, error.message, error.cause, error.path);
 
   switch (replay.authorityBootstrap) {
@@ -573,7 +576,7 @@ export async function verifyRewardCommitmentV1(input: unknown, options: RewardCo
     default:
       result.authorityValid = false;
   }
-  if (historyInvalid) result.authorityValid = false;
+  if (historyInvalid || replayRejected) result.authorityValid = false;
 
   // Step 2: commitmentEvent is included in systemEvents, and batch === commitmentEvent.payload.
   const commitmentIncluded = replay.ordered.some((event) => deepEqualJson(event, token.commitmentEvent));
