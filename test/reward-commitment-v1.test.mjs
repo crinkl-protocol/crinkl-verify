@@ -80,6 +80,77 @@ test("a non-genesis system-stream segment is indeterminate, not accepted", async
   assert.ok(result.warnings.some((warning) => warning.code === "AUTHORITY_INDETERMINATE_NON_GENESIS_SEGMENT"));
 });
 
+test("caller-supplied missing history replays the full rotation and revocation chain from genesis", async () => {
+  const fixtureCase = caseById("rewardCommitment.v1.committed.1a");
+  const token = clone(fixtureCase.token);
+  const history = token.systemEvents.slice(0, -1).map(clone);
+  token.systemEvents = [clone(token.commitmentEvent)];
+  const result = await verifyRewardCommitmentV1(token, {
+    authorityTrust: authorityTrustFor(fixtureCase),
+    systemStreamHistory: history
+  });
+  assert.equal(result.systemStreamValid, true);
+  assert.equal(result.authorityValid, true);
+  assert.equal(result.accepted, true);
+  assert.deepEqual(result.errors, []);
+});
+
+test("a P1.6b-compatible provider is paged from the exact earliest prevHash", async () => {
+  const fixtureCase = caseById("rewardCommitment.v1.committed.1a");
+  const token = clone(fixtureCase.token);
+  const historyNewestFirst = token.systemEvents.slice(0, -1).map(clone).reverse();
+  const historyByHash = new Map(historyNewestFirst.map((event) => [event.eventHash, event]));
+  token.systemEvents = [clone(token.commitmentEvent)];
+  const calls = [];
+  const result = await verifyRewardCommitmentV1(token, {
+    authorityTrust: authorityTrustFor(fixtureCase),
+    maxHistoryEvents: 10,
+    timeoutMs: 1_000,
+    systemStreamHistoryResolver: ({ chainId, headHash, limit, signal }) => {
+      calls.push({ chainId, headHash, limit, aborted: signal.aborted });
+      const event = historyByHash.get(headHash);
+      return {
+        success: true,
+        data: {
+          chainId,
+          requestedHeadHash: headHash,
+          events: [event],
+          nextHeadHash: event.prevHash,
+          hasMore: event.prevHash !== null
+        }
+      };
+    }
+  });
+  assert.equal(calls.length, historyNewestFirst.length);
+  assert.equal(calls[0].headHash, fixtureCase.token.commitmentEvent.prevHash);
+  assert.equal(calls[0].limit, 10);
+  assert.equal(calls[0].aborted, false);
+  assert.deepEqual(calls.map((call) => call.headHash), historyNewestFirst.map((event) => event.eventHash));
+  assert.deepEqual(calls.map((call) => call.limit), [10, 9, 8]);
+  assert.equal(result.authorityValid, true);
+  assert.equal(result.accepted, true);
+});
+
+test("history budget, missing provider data, network failure, and timeout remain indeterminate", async () => {
+  const fixtureCase = caseById("rewardCommitment.v1.committed.1a");
+  const token = clone(fixtureCase.token);
+  token.systemEvents = [clone(token.commitmentEvent)];
+  const cases = [
+    { maxHistoryEvents: 2, systemStreamHistory: fixtureCase.token.systemEvents.slice(0, -1).map(clone) },
+    { systemStreamHistoryResolver: async () => ({ success: false, error: "system_stream_event_not_found" }) },
+    { systemStreamHistoryResolver: async () => { throw new Error("offline"); } },
+    { timeoutMs: 1, systemStreamHistoryResolver: async () => new Promise(() => {}) }
+  ];
+  for (const historyOptions of cases) {
+    const result = await verifyRewardCommitmentV1(token, {
+      authorityTrust: authorityTrustFor(fixtureCase),
+      ...historyOptions
+    });
+    assert.equal(result.authorityValid, "indeterminate");
+    assert.equal(result.accepted, false);
+  }
+});
+
 test("chainEvidence defaults to not-checked", async () => {
   const fixtureCase = caseById("rewardCommitment.v1.committed.1a");
   const result = await verifyRewardCommitmentV1(fixtureCase.token, { authorityTrust: authorityTrustFor(fixtureCase) });

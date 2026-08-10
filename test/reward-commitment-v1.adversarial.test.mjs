@@ -52,6 +52,11 @@ async function resignSpendWithId(spend, spendId) {
   return { ...unsigned, signatures: { ...spend.signatures, tokenHash, signature } };
 }
 
+async function resignAfter(event, signingSeed, prevHash, overrides = {}) {
+  const base = { ...clone(event), prevHash, ...(overrides.signedBy ? { signedBy: overrides.signedBy } : {}) };
+  return resign(base, signingSeed, overrides.payload);
+}
+
 const fixture = JSON.parse(readFileSync(new URL("../fixtures/reward-commitment-v1.json", import.meta.url)));
 const case1a = fixture.cases.find((c) => c.id === "rewardCommitment.v1.committed.1a");
 const case2a = fixture.cases.find((c) => c.id === "rewardCommitment.v1.committedBacked.2a");
@@ -218,4 +223,139 @@ test("fails closed: wrong reward-commitment schemaVersion (2 instead of 1)", asy
   const result = await verifyRewardCommitmentV1(token, { authorityTrust: trust1a });
   assert.equal(result.accepted, false);
   assert.ok(result.errors.some((e) => e.code === "SCHEMA_INVALID"));
+});
+
+test("fails closed: conflicting duplicate history events are never deduplicated", async () => {
+  const token = clone(case1a.token);
+  const history = token.systemEvents.slice(0, -1).map(clone);
+  token.systemEvents = [clone(token.commitmentEvent)];
+  const conflicting = clone(history[0]);
+  conflicting.payload = { ...conflicting.payload, publicKey: case1a.genesisPublicKeyBase64.replace(/.$/, "A") };
+  const result = await verifyRewardCommitmentV1(token, {
+    authorityTrust: trust1a,
+    systemStreamHistory: [...history, conflicting]
+  });
+  assert.equal(result.systemStreamValid, false);
+  assert.equal(result.authorityValid, false);
+  assert.equal(result.accepted, false);
+  assert.ok(result.errors.some((error) => error.code === "SYSTEM_STREAM_INVALID"));
+});
+
+test("fails closed: malformed, wrong-chain, gapped, and conflicting provider history", async () => {
+  const token = clone(case1a.token);
+  const fullHistory = token.systemEvents.slice(0, -1).map(clone);
+  token.systemEvents = [clone(token.commitmentEvent)];
+  const providers = [
+    async () => ({ success: true, data: { malformed: true } }),
+    async ({ chainId, headHash }) => ({ success: true, data: {
+      chainId,
+      requestedHeadHash: headHash,
+      events: [{ ...clone(fullHistory.at(-1)), chainId: "wrong-chain" }],
+      nextHeadHash: fullHistory.at(-1).prevHash,
+      hasMore: true
+    } }),
+    async ({ chainId, headHash }) => ({ success: true, data: {
+      chainId,
+      requestedHeadHash: headHash,
+      events: [clone(fullHistory.at(-1)), clone(fullHistory[0])],
+      nextHeadHash: null,
+      hasMore: false
+    } }),
+    async () => ({ success: false, error: "system_stream_history_conflict" })
+  ];
+  for (const systemStreamHistoryResolver of providers) {
+    const result = await verifyRewardCommitmentV1(token, {
+      authorityTrust: trust1a,
+      systemStreamHistoryResolver
+    });
+    assert.equal(result.accepted, false);
+    assert.equal(result.authorityValid, false);
+    assert.ok(result.errors.some((error) => error.code === "SYSTEM_STREAM_INVALID"));
+  }
+});
+
+test("fails closed: invalid history bounds never clamp or default", async () => {
+  const token = clone(case1a.token);
+  token.systemEvents = [clone(token.commitmentEvent)];
+  for (const bounds of [
+    { maxHistoryEvents: 0 },
+    { maxHistoryEvents: 1_000_001 },
+    { maxHistoryEvents: 1.5 },
+    { timeoutMs: 0 },
+    { timeoutMs: 120_001 }
+  ]) {
+    const result = await verifyRewardCommitmentV1(token, {
+      authorityTrust: trust1a,
+      systemStreamHistory: [],
+      ...bounds
+    });
+    assert.equal(result.systemStreamValid, false);
+    assert.equal(result.authorityValid, false);
+    assert.equal(result.accepted, false);
+  }
+});
+
+test("fails closed: recovered history rejects every invalid authority lifecycle and signature condition", async (t) => {
+  async function verifyRecovered(events) {
+    const token = clone(case1a.token);
+    token.commitmentEvent = clone(events.at(-1));
+    token.systemEvents = [clone(events.at(-1))];
+    return verifyRewardCommitmentV1(token, {
+      authorityTrust: trust1a,
+      systemStreamHistory: events.slice(0, -1).map(clone)
+    });
+  }
+
+  async function expectRejected(events, expectedCode) {
+    const result = await verifyRecovered(events);
+    assert.equal(result.systemStreamValid, false);
+    assert.equal(result.authorityValid, false);
+    assert.equal(result.accepted, false);
+    assert.ok(result.errors.some((error) => error.code === expectedCode));
+  }
+
+  const [genesis, originalRotation, originalRevocation, originalCommitment] = case1a.token.systemEvents.map(clone);
+
+  await t.test("malformed registration", async () => {
+    const { publicKey: _publicKey, ...malformedPayload } = originalRotation.payload;
+    const rotation = await resignAfter(originalRotation, GENESIS_SEED, genesis.eventHash, { payload: malformedPayload });
+    const revocation = await resignAfter(originalRevocation, ROTATED_AUTHORITY_SEED, rotation.eventHash);
+    const commitment = await resignAfter(originalCommitment, ROTATED_AUTHORITY_SEED, revocation.eventHash);
+    await expectRejected([genesis, rotation, revocation, commitment], "SYSTEM_STREAM_INVALID");
+  });
+
+  await t.test("malformed revocation", async () => {
+    const rotation = clone(originalRotation);
+    const revocation = await resignAfter(originalRevocation, ROTATED_AUTHORITY_SEED, rotation.eventHash, {
+      payload: { ...originalRevocation.payload, revokedBy: "authority-genesis" }
+    });
+    const commitment = await resignAfter(originalCommitment, ROTATED_AUTHORITY_SEED, revocation.eventHash);
+    await expectRejected([genesis, rotation, revocation, commitment], "SYSTEM_STREAM_INVALID");
+  });
+
+  await t.test("invalid intermediate signature", async () => {
+    const replacement = originalRotation.signature.startsWith("A") ? "B" : "A";
+    const rotation = { ...clone(originalRotation), signature: replacement + originalRotation.signature.slice(1) };
+    await expectRejected([genesis, rotation, clone(originalRevocation), clone(originalCommitment)], "AUTHORITY_INVALID");
+  });
+
+  await t.test("skipped or unknown authority", async () => {
+    const rotation = await resignAfter(originalRotation, ROGUE_SEED, genesis.eventHash, { signedBy: "authority-unknown" });
+    const revocation = await resignAfter(originalRevocation, ROTATED_AUTHORITY_SEED, rotation.eventHash);
+    const commitment = await resignAfter(originalCommitment, ROTATED_AUTHORITY_SEED, revocation.eventHash);
+    await expectRejected([genesis, rotation, revocation, commitment], "AUTHORITY_INVALID");
+  });
+
+  await t.test("revoked signer", async () => {
+    const rotation = clone(originalRotation);
+    const revocation = await resignAfter(originalRevocation, ROTATED_AUTHORITY_SEED, rotation.eventHash, {
+      payload: {
+        ...originalRevocation.payload,
+        authorityId: "authority-rotated",
+        validUntil: "2026-01-03T00:00:00.000Z"
+      }
+    });
+    const commitment = await resignAfter(originalCommitment, ROTATED_AUTHORITY_SEED, revocation.eventHash);
+    await expectRejected([genesis, rotation, revocation, commitment], "AUTHORITY_INVALID");
+  });
 });

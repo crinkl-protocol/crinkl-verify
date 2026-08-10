@@ -1,3 +1,4 @@
+import { canonicalizeJcs } from "./crypto.js";
 import { createInertJsonSnapshot, type JsonValue } from "./json.js";
 import { verifyInclusionProof } from "./merkle.js";
 import { findAuthorityRecordAt, replaySystemStreamSegment, validateSystemStreamEventShape } from "./system-stream.js";
@@ -16,6 +17,10 @@ import type {
 const AMOUNT = /^(0|[1-9][0-9]*)$/;
 const HASH = /^[0-9a-f]{64}$/;
 const CLOSED_SCHEMA_VERSIONS = ["1a", "1b", "2a", "2b"] as const;
+const DEFAULT_MAX_HISTORY_EVENTS = 100_000;
+const MAX_HISTORY_EVENTS = 1_000_000;
+const DEFAULT_HISTORY_TIMEOUT_MS = 15_000;
+const MAX_HISTORY_TIMEOUT_MS = 120_000;
 
 function object(value: JsonValue | undefined): { readonly [key: string]: JsonValue } | undefined {
   return value !== null && value !== undefined && typeof value === "object" && !Array.isArray(value)
@@ -100,6 +105,166 @@ function deepEqualJson(a: unknown, b: unknown): boolean {
   const bKeys = Object.keys(bObj).sort();
   if (aKeys.length !== bKeys.length || aKeys.some((key, index) => key !== bKeys[index])) return false;
   return aKeys.every((key) => deepEqualJson(aObj[key], bObj[key]));
+}
+
+type HistoryResolution =
+  | { status: "complete" | "incomplete"; events: SystemStreamEvent[] }
+  | { status: "invalid"; events: SystemStreamEvent[]; message: string };
+
+function parseHistoryEvent(
+  input: unknown,
+  path: string,
+  alreadySnapshotted = false
+): { event?: SystemStreamEvent; message?: string } {
+  const snapshot = alreadySnapshotted ? { value: input as JsonValue } : createInertJsonSnapshot(input);
+  if (snapshot.value === undefined || ("error" in snapshot && snapshot.error)) {
+    return { message: `${path}: ${"error" in snapshot ? snapshot.error : "missing event"}` };
+  }
+  const parsed = validateSystemStreamEventShape(snapshot.value, path);
+  return parsed.error ? { message: parsed.error } : { event: parsed.event };
+}
+
+async function resolveSystemStreamHistory(
+  tokenEvents: readonly SystemStreamEvent[],
+  orderedTokenEvents: readonly SystemStreamEvent[],
+  chainId: string,
+  options: RewardCommitmentVerificationOptions
+): Promise<HistoryResolution> {
+  const maxHistoryEvents = options.maxHistoryEvents ?? DEFAULT_MAX_HISTORY_EVENTS;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_HISTORY_TIMEOUT_MS;
+  if (
+    !Number.isInteger(maxHistoryEvents) ||
+    maxHistoryEvents < 1 ||
+    maxHistoryEvents > MAX_HISTORY_EVENTS ||
+    !Number.isInteger(timeoutMs) ||
+    timeoutMs < 1 ||
+    timeoutMs > MAX_HISTORY_TIMEOUT_MS
+  ) {
+    return { status: "invalid", events: [...tokenEvents], message: "System Stream history bounds are invalid." };
+  }
+
+  const tokenByHash = new Map(tokenEvents.map((event) => [event.eventHash, canonicalizeJcs(event)]));
+  const historyByHash = new Map<string, { event: SystemStreamEvent; canonical: string }>();
+  const deadline = Date.now() + timeoutMs;
+  const addHistoryEvent = (event: SystemStreamEvent): string | undefined => {
+    if (event.chainId !== chainId) return "System Stream history contains an event for a different chainId.";
+    const canonical = canonicalizeJcs(event);
+    const tokenCanonical = tokenByHash.get(event.eventHash);
+    if (tokenCanonical !== undefined) {
+      return tokenCanonical === canonical ? undefined : "System Stream history contains a conflicting duplicate eventHash.";
+    }
+    const existing = historyByHash.get(event.eventHash);
+    if (existing) {
+      return existing.canonical === canonical ? undefined : "System Stream history contains a conflicting duplicate eventHash.";
+    }
+    historyByHash.set(event.eventHash, { event, canonical });
+    return undefined;
+  };
+
+  const suppliedHistory = options.systemStreamHistory ?? [];
+  if (suppliedHistory.length > maxHistoryEvents) return { status: "incomplete", events: [...tokenEvents] };
+  for (const [index, raw] of suppliedHistory.entries()) {
+    if (Date.now() >= deadline) {
+      return { status: "incomplete", events: [...historyByHash.values()].map((item) => item.event).concat(tokenEvents) };
+    }
+    const parsed = parseHistoryEvent(raw, `$.options.systemStreamHistory[${index}]`);
+    if (!parsed.event) {
+      return { status: "invalid", events: [...tokenEvents], message: parsed.message ?? "Malformed System Stream history event." };
+    }
+    const conflict = addHistoryEvent(parsed.event);
+    if (conflict) return { status: "invalid", events: [...tokenEvents], message: conflict };
+  }
+  if (historyByHash.size > maxHistoryEvents) return { status: "incomplete", events: [...tokenEvents] };
+
+  let headHash = orderedTokenEvents[0]?.prevHash ?? null;
+  if (headHash === null) return { status: "complete", events: [...tokenEvents] };
+  const requested = new Set<string>();
+  while (headHash !== null) {
+    if (requested.has(headHash)) {
+      return { status: "invalid", events: [...historyByHash.values()].map((item) => item.event).concat(tokenEvents), message: "System Stream history contains a cycle." };
+    }
+    requested.add(headHash);
+    const supplied = historyByHash.get(headHash);
+    if (supplied) {
+      headHash = supplied.event.prevHash;
+      continue;
+    }
+    const remaining = maxHistoryEvents - historyByHash.size;
+    if (remaining <= 0 || Date.now() >= deadline || !options.systemStreamHistoryResolver) {
+      return { status: "incomplete", events: [...historyByHash.values()].map((item) => item.event).concat(tokenEvents) };
+    }
+
+    const controller = new AbortController();
+    const remainingMs = Math.max(1, deadline - Date.now());
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let rawPage: unknown;
+    try {
+      rawPage = await Promise.race([
+        Promise.resolve(options.systemStreamHistoryResolver({
+          chainId,
+          headHash,
+          limit: Math.min(1000, remaining),
+          signal: controller.signal
+        })),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => {
+            controller.abort();
+            reject(new Error("history timeout"));
+          }, remainingMs);
+        })
+      ]);
+    } catch {
+      if (timer !== undefined) clearTimeout(timer);
+      return { status: "incomplete", events: [...historyByHash.values()].map((item) => item.event).concat(tokenEvents) };
+    }
+    if (timer !== undefined) clearTimeout(timer);
+
+    const snapshot = createInertJsonSnapshot(rawPage);
+    const envelope = snapshot.value === undefined ? undefined : object(snapshot.value);
+    if (!envelope) {
+      return { status: "invalid", events: [...tokenEvents], message: "System Stream history resolver returned a malformed envelope." };
+    }
+    if (envelope.success === false) {
+      return envelope.error === "system_stream_event_not_found"
+        ? { status: "incomplete", events: [...historyByHash.values()].map((item) => item.event).concat(tokenEvents) }
+        : { status: "invalid", events: [...tokenEvents], message: "System Stream history resolver returned a conflict or invalid request." };
+    }
+    const data = object(envelope.data as JsonValue);
+    const pageEvents = data ? array(data.events as JsonValue) : undefined;
+    const requestedHeadHash = headHash;
+    const pageLimit = Math.min(1000, remaining);
+    if (
+      envelope.success !== true ||
+      !data ||
+      data.chainId !== chainId ||
+      data.requestedHeadHash !== requestedHeadHash ||
+      !pageEvents ||
+      pageEvents.length === 0 ||
+      pageEvents.length > pageLimit ||
+      (data.nextHeadHash !== null && (typeof data.nextHeadHash !== "string" || !HASH.test(data.nextHeadHash))) ||
+      typeof data.hasMore !== "boolean" ||
+      data.hasMore !== (data.nextHeadHash !== null)
+    ) {
+      return { status: "invalid", events: [...tokenEvents], message: "System Stream history resolver returned a malformed page." };
+    }
+    let expected = requestedHeadHash;
+    let oldestPrevHash: string | null = null;
+    for (const [index, raw] of pageEvents.entries()) {
+      const parsed = parseHistoryEvent(raw, `$.historyPage.events[${index}]`, true);
+      if (!parsed.event || parsed.event.eventHash !== expected) {
+        return { status: "invalid", events: [...tokenEvents], message: parsed.message ?? "System Stream history page is not contiguous." };
+      }
+      const conflict = addHistoryEvent(parsed.event);
+      if (conflict) return { status: "invalid", events: [...tokenEvents], message: conflict };
+      oldestPrevHash = parsed.event.prevHash;
+      expected = parsed.event.prevHash ?? "";
+    }
+    if (data.nextHeadHash !== oldestPrevHash) {
+      return { status: "invalid", events: [...tokenEvents], message: "System Stream history continuation does not match the oldest event." };
+    }
+    headHash = oldestPrevHash;
+  }
+  return { status: "complete", events: [...historyByHash.values()].map((item) => item.event).concat(tokenEvents) };
 }
 
 function parseToken(input: JsonValue, result: RewardCommitmentVerificationResult): RewardCommitmentTokenV1 | undefined {
@@ -366,8 +531,32 @@ export async function verifyRewardCommitmentV1(input: unknown, options: RewardCo
     committedAt: token.batch.committedAt
   };
 
-  const replay = await replaySystemStreamSegment(token.systemEvents, token.chainId, options.authorityTrust);
-  result.systemStreamValid = replay.integrityValid;
+  let replay = await replaySystemStreamSegment(token.systemEvents, token.chainId, options.authorityTrust);
+  let historyInvalid = false;
+  if (
+    replay.authorityBootstrap === "not_genesis" &&
+    (options.systemStreamHistory !== undefined ||
+      options.systemStreamHistoryResolver !== undefined ||
+      options.maxHistoryEvents !== undefined ||
+      options.timeoutMs !== undefined)
+  ) {
+    const history = await resolveSystemStreamHistory(
+      token.systemEvents,
+      replay.ordered,
+      token.chainId,
+      options
+    );
+    if (history.status === "invalid") {
+      historyInvalid = true;
+      addError(result, "SYSTEM_STREAM_INVALID", history.message, "input", "$.options.systemStreamHistory");
+    } else {
+      replay = await replaySystemStreamSegment(history.events, token.chainId, options.authorityTrust);
+    }
+  }
+  const replayRejected = replay.errors.some(
+    (error) => error.code === "SYSTEM_STREAM_INVALID" || error.code === "AUTHORITY_INVALID"
+  );
+  result.systemStreamValid = replay.integrityValid && !historyInvalid && !replayRejected;
   for (const error of replay.errors) addError(result, error.code, error.message, error.cause, error.path);
 
   switch (replay.authorityBootstrap) {
@@ -387,6 +576,7 @@ export async function verifyRewardCommitmentV1(input: unknown, options: RewardCo
     default:
       result.authorityValid = false;
   }
+  if (historyInvalid || replayRejected) result.authorityValid = false;
 
   // Step 2: commitmentEvent is included in systemEvents, and batch === commitmentEvent.payload.
   const commitmentIncluded = replay.ordered.some((event) => deepEqualJson(event, token.commitmentEvent));
