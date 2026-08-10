@@ -116,8 +116,8 @@ test('chainEvidence mode "solana-rpc" fails closed before network access for a n
     authorityTrust: authorityTrustFor(fixtureCase),
     chainEvidence: {
       mode: "solana-rpc",
+      binding: "crinkl-platform-solana-create-batch-imprint/v1",
       rpcUrl: "https://rpc.example",
-      instructionDiscriminatorHex: "f5f3194de5a7ac64",
       fetch: async () => { called = true; throw new Error("must not be called"); }
     },
     solanaEvidenceTrust: () => true

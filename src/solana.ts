@@ -3,10 +3,20 @@ import type {
   RewardBatchCommittedPayload,
   SolanaEvidenceTrustResolver
 } from "./types.js";
+import { Point } from "@noble/ed25519";
+import { sha256 } from "@noble/hashes/sha256";
 
 const TX_REF = /^solana:([^:]+):([^:]+):(0|[1-9][0-9]*):(0|[1-9][0-9]*):(0|[1-9][0-9]*):([^:]+)$/;
 const HEX_8 = /^[0-9a-f]{16}$/;
 const BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const TEXT = new TextEncoder();
+const SYSTEM_PROGRAM_ID = "11111111111111111111111111111111";
+
+export const PLATFORM_SOLANA_CREATE_BATCH_IMPRINT_V1 = Object.freeze({
+  binding: "crinkl-platform-solana-create-batch-imprint/v1" as const,
+  sourceCommit: "ae3fca9fc1d501591f2c2f377bfdea1f35fa6389" as const,
+  instructionDiscriminatorHex: "f5f3194de5a7ac64"
+});
 
 export interface SolanaAnchorVerification {
   valid: boolean;
@@ -58,6 +68,47 @@ class SolanaEvidenceMismatch extends Error {}
 
 function bytesToHex(value: Uint8Array): string {
   return Array.from(value, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function encodeBase58(value: Uint8Array): string {
+  let numeric = 0n;
+  for (const byte of value) numeric = (numeric << 8n) | BigInt(byte);
+  let body = "";
+  while (numeric > 0n) {
+    body = BASE58[Number(numeric % 58n)] + body;
+    numeric /= 58n;
+  }
+  let leadingZeroes = 0;
+  while (leadingZeroes < value.length && value[leadingZeroes] === 0) leadingZeroes += 1;
+  return "1".repeat(leadingZeroes) + body;
+}
+
+function concat(...values: Uint8Array[]): Uint8Array {
+  const output = new Uint8Array(values.reduce((sum, value) => sum + value.length, 0));
+  let offset = 0;
+  for (const value of values) {
+    output.set(value, offset);
+    offset += value.length;
+  }
+  return output;
+}
+
+function isOnCurve(value: Uint8Array): boolean {
+  try {
+    Point.fromHex(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function findProgramAddress(seeds: Uint8Array[], programId: Uint8Array): string | undefined {
+  const marker = TEXT.encode("ProgramDerivedAddress");
+  for (let bump = 255; bump >= 0; bump -= 1) {
+    const address = sha256(concat(...seeds, Uint8Array.of(bump), programId, marker));
+    if (!isOnCurve(address)) return encodeBase58(address);
+  }
+  return undefined;
 }
 
 function readU64Le(value: Uint8Array, offset: number): bigint {
@@ -112,17 +163,19 @@ export async function verifySolanaBatchAnchor(
   if (!programBytes || programBytes.length !== 32 || !signatureBytes || signatureBytes.length !== 64) {
     return { valid: false, message: "batch.txRef program ID or transaction signature is not canonical base58.", path: "$.batch.txRef", cause: "input" };
   }
-  if (!evidence.rpcUrl || !HEX_8.test(evidence.instructionDiscriminatorHex)) {
-    return { valid: false, message: "solana-rpc mode requires an RPC URL and lowercase 8-byte discriminator hex.", path: "$.options.chainEvidence", cause: "input" };
+  if (evidence.binding !== PLATFORM_SOLANA_CREATE_BATCH_IMPRINT_V1.binding || !evidence.rpcUrl) {
+    return { valid: false, message: "solana-rpc mode requires the supported pinned Platform binding and an RPC URL.", path: "$.options.chainEvidence", cause: "input" };
   }
   if (!trust) return { valid: false, message: "No solanaEvidenceTrust resolver authorized the Solana evidence boundary.", path: "$.options.solanaEvidenceTrust", cause: "trust" };
   let trusted = false;
   try {
     trusted = await trust({
+      binding: PLATFORM_SOLANA_CREATE_BATCH_IMPRINT_V1.binding,
+      sourceCommit: PLATFORM_SOLANA_CREATE_BATCH_IMPRINT_V1.sourceCommit,
       cluster: cluster!,
       rpcUrl: evidence.rpcUrl,
       programId: programId!,
-      instructionDiscriminatorHex: evidence.instructionDiscriminatorHex,
+      instructionDiscriminatorHex: PLATFORM_SOLANA_CREATE_BATCH_IMPRINT_V1.instructionDiscriminatorHex,
       requiredFinality: "finalized"
     });
   } catch {
@@ -152,8 +205,9 @@ export async function verifySolanaBatchAnchor(
       ? [...staticAccountKeys, ...(loadedWritable ?? []), ...(loadedReadonly ?? [])]
       : undefined;
     const instructions = message?.instructions;
+    const header = object(message?.header);
     const signatures = tx?.signatures;
-    if (!transaction || transaction.slot !== slot || meta?.err !== null || !accountKeys || !accountKeys.every((key) => typeof key === "string") || !Array.isArray(instructions) || !Array.isArray(signatures) || signatures[0] !== signature) {
+    if (!transaction || transaction.slot !== slot || meta?.err !== null || !accountKeys || !accountKeys.every((key) => typeof key === "string") || !Array.isArray(instructions) || !Array.isArray(signatures) || signatures[0] !== signature || !header || !Number.isSafeInteger(header.numRequiredSignatures) || Number(header.numRequiredSignatures) < 1) {
       throw new SolanaEvidenceMismatch("getTransaction result does not match the successful transaction named by batch.txRef");
     }
 
@@ -171,17 +225,29 @@ export async function verifySolanaBatchAnchor(
     const instruction = object(instructions[instructionIndex]);
     const programIdIndex = instruction?.programIdIndex;
     const dataText = instruction?.data;
-    if (!Number.isSafeInteger(programIdIndex) || typeof dataText !== "string" || accountKeys[programIdIndex as number] !== programId) {
+    const accounts = instruction?.accounts;
+    if (!Number.isSafeInteger(programIdIndex) || typeof dataText !== "string" || accountKeys[programIdIndex as number] !== programId || !Array.isArray(accounts) || accounts.length !== 4 || !accounts.every(Number.isSafeInteger)) {
       throw new SolanaEvidenceMismatch("instruction program or position does not match batch.txRef");
     }
     const data = decodeBase58(dataText);
     if (!data || data.length !== 61) throw new SolanaEvidenceMismatch("commitment instruction data must be exactly 61 bytes");
-    if (bytesToHex(data.slice(0, 8)) !== evidence.instructionDiscriminatorHex) throw new SolanaEvidenceMismatch("commitment instruction discriminator mismatch");
+    if (bytesToHex(data.slice(0, 8)) !== PLATFORM_SOLANA_CREATE_BATCH_IMPRINT_V1.instructionDiscriminatorHex) throw new SolanaEvidenceMismatch("commitment instruction discriminator mismatch");
     const batchId = expectedBatchId(batch.batchId);
     if (batchId === undefined || readU64Le(data, 8) !== batchId) throw new SolanaEvidenceMismatch("commitment instruction batchId mismatch");
     if (bytesToHex(data.slice(16, 48)) !== batch.root) throw new SolanaEvidenceMismatch("commitment instruction root mismatch");
     if (readU32Le(data, 48) !== batch.leafCount) throw new SolanaEvidenceMismatch("commitment instruction leafCount mismatch");
     if (data[60] !== Number(batch.schemaVersion[0])) throw new SolanaEvidenceMismatch("commitment instruction schemaVersion mismatch");
+    const programBytesForPda = decodeBase58(programId!);
+    const expectedBatchPda = findProgramAddress([TEXT.encode("crinkl"), TEXT.encode("batch"), data.slice(8, 16)], programBytesForPda!);
+    const expectedConfigPda = findProgramAddress([TEXT.encode("crinkl"), TEXT.encode("authority")], programBytesForPda!);
+    if (
+      accountKeys[accounts[0] as number] !== expectedBatchPda ||
+      accountKeys[accounts[1] as number] !== accountKeys[0] ||
+      accountKeys[accounts[2] as number] !== expectedConfigPda ||
+      accountKeys[accounts[3] as number] !== SYSTEM_PROGRAM_ID
+    ) {
+      throw new SolanaEvidenceMismatch("commitment instruction account ABI mismatch");
+    }
     return { valid: true };
   } catch (error) {
     return {

@@ -4,20 +4,20 @@ Verify Crinkl Spend Attestation Tokens and Reward Commitment Tokens locally,
 without accounts. Verification is offline by default; only an explicitly
 configured reward-chain RPC evidence mode uses the network.
 
-`0.1.0-alpha.1` verifies the released native `SpendAttestationTokenV1`
+The `0.1.0-alpha.2` candidate verifies the released native `SpendAttestationTokenV1`
 profile, the released `SpendAttestationTokenV2` holder-binding profile, and the
 `RewardCommitmentTokenV1` profile offline. It also composes native Spend Token
 and reward-commitment verification into tiered spend + reward-commitment
 verification. The separately documented geography compatibility profile in
-current public specification source is a candidate, not an immutable released
-profile. W3C VC verification is intentionally experimental and fails closed
+the adopted V1/V2 geography compatibility rule. W3C VC verification is
+intentionally experimental and fails closed
 until a released Crinkl profile bundle pins its context, schemas, vectors,
 issuer-key history, and status/refresh rules.
 
 ## Install
 
 ```bash
-npm install @crinkl/verify@0.1.0-alpha.1
+npm install @crinkl/verify@0.1.0-alpha.2
 ```
 
 ## Browser compatibility
@@ -43,15 +43,14 @@ These identifiers describe different layers and are not interchangeable:
 
 | Surface | Supported or published value |
 |---|---|
-| npm package | `@crinkl/verify@0.1.0-alpha.1` |
+| npm package candidate | `@crinkl/verify@0.1.0-alpha.2` (not published) |
 | Native Spend Attestation Token schema | `schemaVersion: 1` and `schemaVersion: 2` |
 | Default embedded Spend Token protocol object version | `protocolVersion: "1.0.0-rc.1"` |
-| Latest immutable public specification release | `v1.0.0-rc.4` |
-| Current public specification source | `1.0.0-rc.5`, release candidate not published |
+| Latest immutable public specification release | `v1.0.0-rc.7` |
+| Current public specification source | `1.0.0-rc.8`, release candidate not published |
 
-The released public `v1.0.0-rc.4` bundle includes the
-`SpendAttestationTokenV2` holder-binding profile. Current public specification
-source also documents the adopted V1/V2 geography compatibility rule: new
+The public specification documents the `SpendAttestationTokenV2`
+holder-binding profile and the adopted V1/V2 geography compatibility rule: new
 privacy-preserving issuance omits plaintext `canonical.geoRegion` and
 `canonical.cbsaCode`; signed legacy tokens containing those fields remain
 verifiable; and `C_geoRegion` and `C_cbsaCode` are independently optional ZK
@@ -132,7 +131,7 @@ substitute for, the signed system-stream check:
   supplied `url` and applies the same
   logical-record consistency check as `"provided"`. This package convenience
   endpoint is not Solana JSON-RPC.
-- `{ mode: "solana-rpc", rpcUrl, instructionDiscriminatorHex }` — fetch raw
+- `{ mode: "solana-rpc", binding, rpcUrl }` — fetch raw
   `getTransaction`, `getSignatureStatuses`, and `getBlock` JSON-RPC responses.
   The decoder requires the exact cluster, program, slot, transaction position,
   instruction position, 8-byte discriminator, batch ID mapping, root,
@@ -147,17 +146,20 @@ const result = await verifyRewardCommitmentV1(rewardCommitmentToken, {
     localAuthorityRegistry.allows(chainId, authorityId, publicKeyBase64),
   chainEvidence: {
     mode: "solana-rpc",
+    binding: "crinkl-platform-solana-create-batch-imprint/v1",
     rpcUrl: "https://api.devnet.solana.com",
-    // create_batch_imprint; pin from the adopted Platform/on-chain binding.
-    instructionDiscriminatorHex: "f5f3194de5a7ac64"
   },
   solanaEvidenceTrust: ({
+    binding,
+    sourceCommit,
     cluster,
     rpcUrl,
     programId,
     instructionDiscriminatorHex,
     requiredFinality
   }) =>
+    binding === "crinkl-platform-solana-create-batch-imprint/v1" &&
+    sourceCommit === "ae3fca9fc1d501591f2c2f377bfdea1f35fa6389" &&
     cluster === "devnet" &&
     rpcUrl === "https://api.devnet.solana.com" &&
     programId === configuredCommitmentProgramId &&
@@ -170,6 +172,12 @@ const result = await verifyRewardCommitmentV1(rewardCommitmentToken, {
 `rewardCommitment.solanaEvidenceTrust` belong to the calling application. The
 package supplies no trusted issuer, Authority Registry root, Solana cluster,
 RPC endpoint, program ID, or instruction discriminator.
+
+Raw Solana decoding is application-specific. The supported binding and its
+implementation-source pins, complete instruction/account ABI, limitations, and
+captured real devnet fixture are documented in
+[`docs/platform-solana-create-batch-imprint-v1.md`](docs/platform-solana-create-batch-imprint-v1.md).
+It does not redefine Protocol C1.3 or make this Platform ABI universal.
 
 `verifySpendWithRewardCommitment` composes native spend verification with (1)
 and, when the batch leaf schema is linkable (`2a`/`2b`), the optional
@@ -222,9 +230,8 @@ tracks a `commit` per artifact/binding so both can coexist). Run
 `CRINKL_PROTOCOL_DIR=/path/to/crinkl-protocol npm run fixtures:check` to compare
 provenance against those exact commits.
 
-`fixtures/reward-commitment-v1.json` is not a released protocol conformance
-vector — no signed end-to-end `RewardCommitmentTokenV1` vector exists in the
-protocol repository as of this writing. It is deterministically self-signed
+`fixtures/reward-commitment-v1.json` is a verifier-generated test suite rather
+than the adopted C1.2 two-token fixture. It is deterministically self-signed
 by `scripts/generate-reward-commitment-fixtures.mjs` with clearly-fake test
 keys, independent of `src/*.ts`, so the test suite exercises real
 verification logic against data generated by different code.
@@ -237,6 +244,7 @@ npm run typecheck
 npm test
 npm run test:conformance
 npm run fixtures:check
+npm run solana-binding:check
 npm run pack:dry-run
 ```
 

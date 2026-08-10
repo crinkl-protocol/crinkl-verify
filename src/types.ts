@@ -433,6 +433,8 @@ export interface ChainEvidenceRpc {
 
 /** Caller-owned authorization for one Solana RPC trust boundary. */
 export interface SolanaEvidenceTrustInput {
+  binding: "crinkl-platform-solana-create-batch-imprint/v1";
+  sourceCommit: "ae3fca9fc1d501591f2c2f377bfdea1f35fa6389";
   cluster: string;
   rpcUrl: string;
   programId: string;
@@ -451,8 +453,8 @@ export type SolanaEvidenceTrustResolver = (
  */
 export interface ChainEvidenceSolanaRpc {
   mode: "solana-rpc";
+  binding: "crinkl-platform-solana-create-batch-imprint/v1";
   rpcUrl: string;
-  instructionDiscriminatorHex: string;
   /** Injectable for testing; defaults to `globalThis.fetch`. */
   fetch?: typeof fetch;
 }
