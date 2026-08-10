@@ -478,7 +478,10 @@ export interface RewardCommitmentVerificationResult {
  * highest rung this package could establish: a signed claim
  * (`"crypto-valid"`), a claim with an anchored batch-level reward liability
  * (`"committed"`), or a claim with a liability additionally attested as
- * economically backed (`"committed-backed"`).
+ * economically backed (`"committed-backed"`). For linkable 2a/2b batches,
+ * the composite may return a committed tier only when an exact
+ * `rewardInclusionProof` binds the verified spend metadata to the aggregate
+ * leaf; otherwise it remains `"crypto-valid"`.
  */
 export type SpendRewardClaimTier = "invalid" | "crypto-valid" | "committed" | "committed-backed";
 

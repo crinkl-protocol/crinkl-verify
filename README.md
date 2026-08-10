@@ -148,6 +148,16 @@ spend↔reward linkage proof. The result is a tier:
 A missing reward-commitment token is not an error for the spend token — the
 result just stays at `crypto-valid`.
 
+For a linkable `2a` or `2b` batch, the composite may report `committed` or
+`committed-backed` only after an exact `rewardInclusionProof` verifies: its
+Merkle path, recipient, batch, aggregate `rewardEventsRoot`, and `spendId`
+must all bind to the already verified Spend Token metadata. An absent linkage
+proof is `not-checked` and leaves the composite at `crypto-valid`. A supplied
+malformed or mismatching proof fails closed for the composite economic tier
+(with `linkage: "mismatch"`), while preserving the separately reported
+Reward Commitment verification result. Non-linkable `1a`/`1b` batches retain
+`linkage: "not-applicable"` and their independent committed-tier behavior.
+
 **This package proves that an issuer signed the canonical claim and, for
 `committed`/`committed-backed`, that the issuer attached and anchored an
 economic (reward) liability to it. It does not prove the underlying purchase

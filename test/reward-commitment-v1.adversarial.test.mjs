@@ -22,6 +22,7 @@ const seed = (label) => sha256(enc.encode(`crinkl-verify-test-seed:${label}`));
 const GENESIS_SEED = seed("reward-commitment-authority-genesis");
 const ROTATED_AUTHORITY_SEED = seed("reward-commitment-authority-rotated");
 const ROGUE_SEED = seed("some-rogue-unregistered-key");
+const SPEND_ISSUER_SEED = seed("reward-commitment-spend-issuer");
 
 async function resign(event, signingSeed, payloadOverride) {
   const base = clone(event);
@@ -38,6 +39,17 @@ async function resign(event, signingSeed, payloadOverride) {
   const eventHash = sha256Hex(enc.encode(canonicalize(unsigned)));
   const signature = Buffer.from(await ed25519.signAsync(Buffer.from(eventHash, "hex"), signingSeed)).toString("base64");
   return { ...unsigned, eventHash, signature };
+}
+
+async function resignSpendWithId(spend, spendId) {
+  const unsigned = clone(spend);
+  delete unsigned.signatures;
+  unsigned.spendId = spendId;
+  unsigned.canonical.storeHash = `sha256:${sha256Hex(enc.encode(spendId))}`;
+  unsigned.lineage.headEventHash = sha256Hex(enc.encode(`${spendId}-head`));
+  const tokenHash = sha256Hex(enc.encode(canonicalize(unsigned)));
+  const signature = Buffer.from(await ed25519.signAsync(Buffer.from(tokenHash, "hex"), SPEND_ISSUER_SEED)).toString("base64");
+  return { ...unsigned, signatures: { ...spend.signatures, tokenHash, signature } };
 }
 
 const fixture = JSON.parse(readFileSync(new URL("../fixtures/reward-commitment-v1.json", import.meta.url)));
@@ -159,6 +171,29 @@ test("fails closed: tampered rewardInclusionProof leafHash (breaks the Merkle su
   const issuerTrust = ({ issuedBy, publicKeyBase64 }) => issuedBy === case2a.spendIssuer.issuedBy && publicKeyBase64 === case2a.spendIssuer.publicKeyBase64;
   const result = await verifySpendWithRewardCommitment(case2a.spendToken, token, { issuerTrust, rewardCommitment: { authorityTrust: trust2a } });
   assert.equal(result.linkage, "mismatch");
+});
+
+test("fails closed for composite tiers: a different but valid Spend Token cannot claim a linkable reward proof", async () => {
+  const spend = await resignSpendWithId(case2a.spendToken, "spend-2a-different-valid-001");
+  const issuerTrust = ({ issuedBy, publicKeyBase64 }) => issuedBy === case2a.spendIssuer.issuedBy && publicKeyBase64 === case2a.spendIssuer.publicKeyBase64;
+  const result = await verifySpendWithRewardCommitment(spend, case2a.token, { issuerTrust, rewardCommitment: { authorityTrust: trust2a } });
+  assert.equal(result.spend.cryptographicallyValid, true);
+  assert.equal(result.rewardCommitment.accepted, true);
+  assert.equal(result.linkage, "mismatch");
+  assert.equal(result.tier, "crypto-valid");
+  assert.ok(result.errors.some((e) => e.code === "SPEND_REWARD_LINKAGE_MISMATCH"));
+});
+
+test("fails closed for composite tiers: a supplied malformed linkable proof is mismatch, not a committed tier", async () => {
+  const token = clone(case2a.token);
+  token.rewardInclusionProof = { malformed: true };
+  const issuerTrust = ({ issuedBy, publicKeyBase64 }) => issuedBy === case2a.spendIssuer.issuedBy && publicKeyBase64 === case2a.spendIssuer.publicKeyBase64;
+  const result = await verifySpendWithRewardCommitment(case2a.spendToken, token, { issuerTrust, rewardCommitment: { authorityTrust: trust2a } });
+  assert.equal(result.spend.cryptographicallyValid, true);
+  assert.equal(result.rewardCommitment.accepted, false);
+  assert.equal(result.linkage, "mismatch");
+  assert.equal(result.tier, "crypto-valid");
+  assert.ok(result.errors.some((e) => e.code === "SPEND_REWARD_LINKAGE_MISMATCH"));
 });
 
 test("fails closed: unknown batch.schemaVersion", async () => {
