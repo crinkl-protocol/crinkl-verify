@@ -1,5 +1,3 @@
-import { types } from "node:util";
-
 export type JsonValue = null | boolean | number | string | readonly JsonValue[] | { readonly [key: string]: JsonValue };
 
 export interface JsonSnapshot {
@@ -29,6 +27,12 @@ function invalid(path: string, message: string): JsonSnapshot {
  * Copies an input JSON tree without invoking user accessors and freezes every
  * copied container. Verification uses this snapshot exclusively so a caller
  * cannot alter the signed view between validation, hashing, and policy checks.
+ *
+ * The descriptor pass deliberately precedes the `structuredClone` proxy
+ * screen: standard structured cloning reads enumerable getters, while this
+ * verifier must reject accessors without invoking them. `structuredClone` is
+ * used only to reject otherwise-transparent Proxies after the inert snapshot
+ * has been made; its output is never trusted or used for verification.
  */
 export function createInertJsonSnapshot(input: unknown): JsonSnapshot {
   const seen = new WeakSet<object>();
@@ -44,7 +48,6 @@ export function createInertJsonSnapshot(input: unknown): JsonSnapshot {
       return Number.isFinite(value) ? { value } : invalid(path, "numbers must be finite");
     }
     if (typeof value !== "object") return invalid(path, `unsupported JSON value type ${typeof value}`);
-    if (types.isProxy(value)) return invalid(path, "proxies are not JSON values");
     if (seen.has(value)) return invalid(path, "cycles and shared object references are not JSON values");
     seen.add(value);
 
@@ -86,5 +89,23 @@ export function createInertJsonSnapshot(input: unknown): JsonSnapshot {
     return { value: Object.freeze(result) };
   }
 
-  return copy(input, "$");
+  let snapshot: JsonSnapshot;
+  try {
+    snapshot = copy(input, "$");
+  } catch {
+    return invalid("$", "objects must be inert JSON data containers");
+  }
+  if (snapshot.error || input === null || typeof input !== "object") return snapshot;
+
+  try {
+    // Proxies are not structured-cloneable. This final screen catches a
+    // transparent Proxy which can otherwise imitate a plain data object to
+    // the descriptor-only walk above. Do not use the cloned value: the inert
+    // descriptor copy is the sole verification input.
+    structuredClone(input);
+  } catch {
+    return invalid("$", "proxies are not JSON values");
+  }
+
+  return snapshot;
 }

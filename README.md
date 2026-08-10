@@ -20,6 +20,23 @@ issuer-key history, and status/refresh rules.
 npm install @crinkl/verify@0.1.0-alpha.1
 ```
 
+## Browser compatibility
+
+The published ESM verifier has no Node runtime imports and can be bundled for
+modern browsers. It requires the platform `structuredClone` API (available in
+current evergreen browsers and Node 17+): the verifier uses it only as a final
+Proxy rejection screen, while descriptor-based copying remains the signed
+input snapshot. Unsupported runtimes fail closed for object inputs rather than
+silently accepting an object whose Proxy status cannot be checked.
+
+Accessor properties, custom prototypes, sparse arrays, cycles, shared object
+references, symbols, and Proxies are rejected as non-inert JSON. The
+descriptor walk rejects normal accessors before `structuredClone`, so their
+getter is never used as verification input. A hostile Proxy can run reflective
+traps before rejection; JavaScript does not expose a portable zero-trap Proxy
+test. Parse untrusted serialized tokens with `JSON.parse` before verification
+when the caller needs to avoid executing any behavior supplied by an object.
+
 ## Version boundaries
 
 These identifiers describe different layers and are not interchangeable:
