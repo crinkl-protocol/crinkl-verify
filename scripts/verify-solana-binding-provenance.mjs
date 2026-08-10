@@ -6,8 +6,7 @@ const root = new URL("../", import.meta.url);
 const fixture = JSON.parse(readFileSync(new URL("fixtures/solana-platform-create-batch-imprint-v1.json", root)));
 const provenance = JSON.parse(readFileSync(new URL("fixtures/solana-platform-create-batch-imprint-v1.provenance.json", root)));
 const repositories = {
-  "crinkl-platform": process.env.CRINKL_PLATFORM_DIR ?? "../crinkl-platform",
-  "crinkl-onchain-processor": process.env.CRINKL_ONCHAIN_PROCESSOR_DIR ?? "../crinkl-onchain-processor"
+  "crinkl-platform": process.env.CRINKL_PLATFORM_DIR ?? "../crinkl-platform"
 };
 
 if (fixture.binding !== provenance.binding) throw new Error("Solana binding identity mismatch");

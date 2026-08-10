@@ -12,9 +12,6 @@ The binding is pinned to these implementation objects:
 |---|---|---|---|
 | `crinkl-platform` | `ae3fca9fc1d501591f2c2f377bfdea1f35fa6389` | `packages/commitment/src/solanaClient.ts` | `549bff752417401ee34eb1782d99f802a0866327` |
 | `crinkl-platform` | `ae3fca9fc1d501591f2c2f377bfdea1f35fa6389` | `services/commitment-publisher/src/adapters/infra/nats/worker.ts` | `a99b6478db804654ab65563a6ed371f2f770c91f` |
-| `crinkl-onchain-processor` | `7d8ef217b1448cdb86836f20487a643600dbd631` | `programs/onchain-processor/idl.json` | `5541eb650236cbed7854d34fdcc1c6962a81fc5c` |
-| `crinkl-onchain-processor` | `7d8ef217b1448cdb86836f20487a643600dbd631` | `programs/onchain-processor/src/lib.rs` | `e7ebebe97a7afaf8df23de3343722fc247d3e832` |
-
 The runtime program ID is not fixed by this document. Platform obtains it from
 `COMMITMENT_SOLANA_PROGRAM_ID`, emits it in `txRef`, and the verifier requires
 the calling application to authorize it through `solanaEvidenceTrust`.

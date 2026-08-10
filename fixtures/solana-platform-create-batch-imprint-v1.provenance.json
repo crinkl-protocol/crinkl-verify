@@ -12,18 +12,6 @@
       "commit": "ae3fca9fc1d501591f2c2f377bfdea1f35fa6389",
       "path": "services/commitment-publisher/src/adapters/infra/nats/worker.ts",
       "gitBlob": "a99b6478db804654ab65563a6ed371f2f770c91f"
-    },
-    {
-      "repository": "crinkl-onchain-processor",
-      "commit": "7d8ef217b1448cdb86836f20487a643600dbd631",
-      "path": "programs/onchain-processor/idl.json",
-      "gitBlob": "5541eb650236cbed7854d34fdcc1c6962a81fc5c"
-    },
-    {
-      "repository": "crinkl-onchain-processor",
-      "commit": "7d8ef217b1448cdb86836f20487a643600dbd631",
-      "path": "programs/onchain-processor/src/lib.rs",
-      "gitBlob": "e7ebebe97a7afaf8df23de3343722fc247d3e832"
     }
   ],
   "rpcEvidence": {
