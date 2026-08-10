@@ -1,6 +1,6 @@
 {
   "name": "@crinkl/verify",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "description": "Verify Crinkl spend attestation tokens and reward commitments locally, with optional caller-directed chain RPC evidence.",
   "type": "module",
   "exports": {
@@ -12,6 +12,9 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
+    "docs",
+    "fixtures",
+    "scripts",
     "README.md",
     "LICENSE"
   ],
@@ -46,6 +49,8 @@
     "test": "npm run build && node --test test/*.test.mjs",
     "test:conformance": "npm run build && node --test test/*.conformance.test.mjs",
     "fixtures:check": "node scripts/verify-fixture-provenance.mjs",
+    "solana-binding:check": "node scripts/verify-solana-binding-provenance.mjs",
+    "test:browser": "npm run build && node test/browser-build.mjs",
     "pack:dry-run": "npm pack --dry-run"
   },
   "dependencies": {
@@ -54,6 +59,7 @@
     "json-canonicalize": "^1.1.1"
   },
   "devDependencies": {
+    "esbuild": "^0.25.0",
     "typescript": "^5.7.3"
   }
 }

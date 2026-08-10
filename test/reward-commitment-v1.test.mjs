@@ -19,6 +19,11 @@ function authorityTrustFor(fixtureCase) {
     publicKeyBase64 === fixtureCase.genesisPublicKeyBase64;
 }
 
+function spendIssuerTrust(fixtureCase) {
+  return ({ issuedBy, publicKeyBase64 }) =>
+    issuedBy === fixtureCase.spendIssuer.issuedBy && publicKeyBase64 === fixtureCase.spendIssuer.publicKeyBase64;
+}
+
 test("verifies a COMMITTED transparent-recipient (schema 1a) reward commitment, including a full authority rotation", async () => {
   const fixtureCase = caseById("rewardCommitment.v1.committed.1a");
   const result = await verifyRewardCommitmentV1(fixtureCase.token, { authorityTrust: authorityTrustFor(fixtureCase) });
@@ -100,7 +105,27 @@ test('chainEvidence mode "provided" flags a mismatching record as indeterminate,
     chainEvidence: { mode: "provided", tx: { batchId: batch.batchId, root: "0".repeat(64), schemaVersion: batch.schemaVersion } }
   });
   assert.equal(result.anchor, "indeterminate");
+  assert.equal(result.accepted, false);
   assert.ok(result.errors.some((error) => error.code === "CHAIN_EVIDENCE_MISMATCH"));
+});
+
+test('chainEvidence mode "solana-rpc" fails closed before network access for a noncanonical batch.txRef', async () => {
+  const fixtureCase = caseById("rewardCommitment.v1.committed.1a");
+  let called = false;
+  const result = await verifyRewardCommitmentV1(fixtureCase.token, {
+    authorityTrust: authorityTrustFor(fixtureCase),
+    chainEvidence: {
+      mode: "solana-rpc",
+      binding: "crinkl-platform-solana-create-batch-imprint/v1",
+      rpcUrl: "https://rpc.example",
+      fetch: async () => { called = true; throw new Error("must not be called"); }
+    },
+    solanaEvidenceTrust: () => true
+  });
+  assert.equal(called, false);
+  assert.equal(result.anchor, "indeterminate");
+  assert.equal(result.accepted, false);
+  assert.ok(result.errors.some((error) => error.code === "CHAIN_EVIDENCE_INVALID"));
 });
 
 test('chainEvidence mode "rpc" fetches exactly the caller-supplied url and verifies the response', async () => {
@@ -164,6 +189,35 @@ test("composes with native spend verification to reach the committed-backed tier
   assert.equal(result.anchor, "not-checked");
   assert.deepEqual(result.errors, []);
 });
+
+test("a linkable 2a commitment with no rewardInclusionProof remains crypto-valid and not-checked", async () => {
+  const fixtureCase = caseById("rewardCommitment.v1.committedBacked.2a");
+  const token = clone(fixtureCase.token);
+  delete token.rewardInclusionProof;
+  const result = await verifySpendWithRewardCommitment(fixtureCase.spendToken, token, {
+    issuerTrust: spendIssuerTrust(fixtureCase),
+    rewardCommitment: { authorityTrust: authorityTrustFor(fixtureCase) }
+  });
+  assert.equal(result.spend.cryptographicallyValid, true);
+  assert.equal(result.rewardCommitment.accepted, true);
+  assert.equal(result.linkage, "not-checked");
+  assert.equal(result.tier, "crypto-valid");
+});
+
+for (const id of ["rewardCommitment.v1.committed.1a", "rewardCommitment.v1.committed.1b"]) {
+  test(`a non-linkable ${id.slice(-2)} commitment retains independent tiering`, async () => {
+    const rewardCase = caseById(id);
+    const spendCase = caseById("rewardCommitment.v1.committedBacked.2a");
+    const result = await verifySpendWithRewardCommitment(spendCase.spendToken, rewardCase.token, {
+      issuerTrust: spendIssuerTrust(spendCase),
+      rewardCommitment: { authorityTrust: authorityTrustFor(rewardCase) }
+    });
+    assert.equal(result.spend.cryptographicallyValid, true);
+    assert.equal(result.rewardCommitment.accepted, true);
+    assert.equal(result.linkage, "not-applicable");
+    assert.equal(result.tier, "committed");
+  });
+}
 
 test("a missing reward commitment is not an error for the spend token; the tier just stays crypto-valid", async () => {
   const fixtureCase = caseById("rewardCommitment.v1.committedBacked.2a");

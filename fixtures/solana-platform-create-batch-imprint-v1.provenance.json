@@ -1,0 +1,28 @@
+{
+  "binding": "crinkl-platform-solana-create-batch-imprint/v1",
+  "sources": [
+    {
+      "repository": "crinkl-platform",
+      "commit": "ae3fca9fc1d501591f2c2f377bfdea1f35fa6389",
+      "path": "packages/commitment/src/solanaClient.ts",
+      "gitBlob": "549bff752417401ee34eb1782d99f802a0866327"
+    },
+    {
+      "repository": "crinkl-platform",
+      "commit": "ae3fca9fc1d501591f2c2f377bfdea1f35fa6389",
+      "path": "services/commitment-publisher/src/adapters/infra/nats/worker.ts",
+      "gitBlob": "a99b6478db804654ab65563a6ed371f2f770c91f"
+    }
+  ],
+  "rpcEvidence": {
+    "cluster": "devnet",
+    "endpoint": "https://api.devnet.solana.com",
+    "signature": "iALu1WYEPgVA5HHLqxxBsKf4rTGB8YveiAopFMFv4WkvBSWEQ8mCzpPyN3aMfB7S6aPN4KZ7QvDEFhFA19szcjQ",
+    "slot": 480354025,
+    "sha256Json": {
+      "getTransaction": "68d9edbbc0e9556ac576a26517e9dab6c293ddd5e04ef2804806ac5c9e7d8081",
+      "getSignatureStatuses": "64ee494c88b2545819ae9f630ec9ed1acd28c4d00dbe85278f99c5fa41bbdadd",
+      "getBlock": "dfb7a8ed6fbc43dc44c7a5c1fb5cf87ae5412eb838cc5b3669fd54704b840dbd"
+    }
+  }
+}

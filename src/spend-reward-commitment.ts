@@ -1,15 +1,24 @@
+import { createInertJsonSnapshot, type JsonValue } from "./json.js";
 import { verifyInclusionProof } from "./merkle.js";
 import { verifyNativeSpendAttestation } from "./native-v1.js";
 import { verifyRewardCommitmentV1 } from "./reward-commitment-v1.js";
 import type {
-  RewardCommitmentTokenV1,
-  SpendAttestationTokenV1,
   SpendRewardClaimTier,
   SpendRewardLinkageStatus,
   SpendWithRewardCommitmentOptions,
   SpendWithRewardCommitmentResult,
   VerificationError
 } from "./types.js";
+
+function object(value: JsonValue | undefined): { readonly [key: string]: JsonValue } | undefined {
+  return value !== null && value !== undefined && typeof value === "object" && !Array.isArray(value)
+    ? (value as { readonly [key: string]: JsonValue })
+    : undefined;
+}
+
+function hasOwn(value: { readonly [key: string]: JsonValue } | undefined, key: string): boolean {
+  return value !== undefined && Object.prototype.hasOwnProperty.call(value, key);
+}
 
 /**
  * Composes native spend-attestation verification with reward-commitment
@@ -42,49 +51,89 @@ export async function verifySpendWithRewardCommitment(
     return { tier: "crypto-valid", spend, linkage: "not-applicable", anchor: "not-checked", errors, warnings };
   }
 
+  // Read linkage inputs only from this inert copy. In particular, never use
+  // the caller's original spend object after its verification completed.
+  const rewardSnapshot = createInertJsonSnapshot(rewardCommitmentToken);
+  const rewardToken = rewardSnapshot.error || rewardSnapshot.value === undefined ? undefined : object(rewardSnapshot.value);
+  const batch = object(rewardToken?.batch);
+  const schemaVersion = batch?.schemaVersion;
+  const linkable = schemaVersion === "2a" || schemaVersion === "2b";
+  const hasSuppliedLinkageProof = hasOwn(rewardToken, "rewardInclusionProof");
+
   const rewardCommitment = await verifyRewardCommitmentV1(rewardCommitmentToken, options.rewardCommitment);
   errors.push(...rewardCommitment.errors);
   warnings.push(...rewardCommitment.warnings);
 
   if (!rewardCommitment.accepted) {
-    return { tier: "crypto-valid", spend, rewardCommitment, linkage: "not-applicable", anchor: rewardCommitment.anchor, errors, warnings };
+    if (linkable && hasSuppliedLinkageProof) {
+      errors.push({
+        code: "SPEND_REWARD_LINKAGE_MISMATCH",
+        message: "A supplied linkable rewardInclusionProof could not establish an exact Spend-to-reward linkage.",
+        cause: "input",
+        path: "$.rewardInclusionProof"
+      });
+      return { tier: "crypto-valid", spend, rewardCommitment, linkage: "mismatch", anchor: rewardCommitment.anchor, errors, warnings };
+    }
+    return { tier: "crypto-valid", spend, rewardCommitment, linkage: linkable ? "not-checked" : "not-applicable", anchor: rewardCommitment.anchor, errors, warnings };
   }
 
-  const tier: SpendRewardClaimTier = rewardCommitment.economicTier === "COMMITTED_BACKED" ? "committed-backed" : "committed";
+  const rewardTier: SpendRewardClaimTier = rewardCommitment.economicTier === "COMMITTED_BACKED" ? "committed-backed" : "committed";
 
   let linkage: SpendRewardLinkageStatus = "not-applicable";
-  const schemaVersion = rewardCommitment.metadata.batchId !== undefined ? (rewardCommitmentToken as RewardCommitmentTokenV1).batch?.schemaVersion : undefined;
-  const linkable = schemaVersion === "2a" || schemaVersion === "2b";
-  const rewardInclusionProof = (rewardCommitmentToken as RewardCommitmentTokenV1).rewardInclusionProof;
+  let tier: SpendRewardClaimTier = rewardTier;
 
   if (linkable) {
-    if (!rewardInclusionProof) {
+    const rewardInclusionProof = object(rewardToken?.rewardInclusionProof);
+    if (!hasSuppliedLinkageProof) {
       linkage = "not-checked";
+      tier = "crypto-valid";
     } else {
-      const spendId = (spendToken as SpendAttestationTokenV1 | undefined)?.spendId;
-      const token = rewardCommitmentToken as RewardCommitmentTokenV1;
-      const leaf = token.leaf as { rewardEventsRoot?: unknown };
+      const proofLeaf = object(rewardInclusionProof?.leaf);
+      const siblings = rewardInclusionProof?.siblings;
+      const aggregateLeaf = object(rewardToken?.leaf);
+      const spendId = spend.metadata.spendId;
+      const proofWellFormed =
+        rewardInclusionProof !== undefined &&
+        proofLeaf !== undefined &&
+        Array.isArray(siblings) && siblings.every((sibling) => typeof sibling === "string") &&
+        typeof rewardInclusionProof.recipientId === "string" &&
+        typeof rewardInclusionProof.batchId === "string" &&
+        typeof rewardInclusionProof.rewardEventsRoot === "string" &&
+        typeof rewardInclusionProof.leafHash === "string" &&
+        typeof proofLeaf.spendId === "string" &&
+        typeof batch?.batchId === "string" &&
+        typeof rewardToken?.recipientId === "string" &&
+        typeof aggregateLeaf?.rewardEventsRoot === "string" &&
+        typeof spendId === "string";
 
-      const recipientMatches = rewardInclusionProof.recipientId === token.recipientId;
-      const batchMatches = rewardInclusionProof.batchId === token.batch.batchId;
-      const rootMatches = rewardInclusionProof.rewardEventsRoot === leaf.rewardEventsRoot;
-      const spendIdMatches = rewardInclusionProof.leaf.spendId === spendId;
+      let inclusionValid = false;
+      if (proofWellFormed) {
+        try {
+          inclusionValid = verifyInclusionProof({
+            leaf: proofLeaf,
+            leafHash: rewardInclusionProof.leafHash as string,
+            siblings: siblings as readonly string[],
+            expectedRoot: rewardInclusionProof.rewardEventsRoot as string
+          }).valid;
+        } catch {
+          inclusionValid = false;
+        }
+      }
 
-      const inclusion = verifyInclusionProof({
-        leaf: rewardInclusionProof.leaf,
-        leafHash: rewardInclusionProof.leafHash,
-        siblings: rewardInclusionProof.siblings,
-        expectedRoot: rewardInclusionProof.rewardEventsRoot
-      });
+      const recipientMatches = proofWellFormed && rewardInclusionProof!.recipientId === rewardToken!.recipientId;
+      const batchMatches = proofWellFormed && rewardInclusionProof!.batchId === batch!.batchId;
+      const rootMatches = proofWellFormed && rewardInclusionProof!.rewardEventsRoot === aggregateLeaf!.rewardEventsRoot;
+      const spendIdMatches = proofWellFormed && proofLeaf!.spendId === spendId;
 
-      if (recipientMatches && batchMatches && rootMatches && spendIdMatches && inclusion.valid) {
+      if (recipientMatches && batchMatches && rootMatches && spendIdMatches && inclusionValid) {
         linkage = "verified";
       } else {
         linkage = "mismatch";
+        tier = "crypto-valid";
         errors.push({
           code: "SPEND_REWARD_LINKAGE_MISMATCH",
-          message: "rewardInclusionProof does not consistently bind this spendId to the reward commitment's aggregated leaf.",
-          cause: inclusion.valid ? "input" : "crypto",
+          message: "rewardInclusionProof does not consistently bind the verified spendId to the reward commitment's aggregated leaf.",
+          cause: inclusionValid ? "input" : "crypto",
           path: "$.rewardInclusionProof"
         });
       }

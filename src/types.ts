@@ -431,7 +431,35 @@ export interface ChainEvidenceRpc {
   fetch?: typeof fetch;
 }
 
-export type ChainEvidence = ChainEvidenceNone | ChainEvidenceProvided | ChainEvidenceRpc;
+/** Caller-owned authorization for one Solana RPC trust boundary. */
+export interface SolanaEvidenceTrustInput {
+  binding: "crinkl-platform-solana-create-batch-imprint/v1";
+  sourceCommit: "ae3fca9fc1d501591f2c2f377bfdea1f35fa6389";
+  cluster: string;
+  rpcUrl: string;
+  programId: string;
+  instructionDiscriminatorHex: string;
+  requiredFinality: "finalized";
+}
+
+export type SolanaEvidenceTrustResolver = (
+  input: SolanaEvidenceTrustInput
+) => boolean | Promise<boolean>;
+
+/**
+ * Fetch and decode the finalized Solana transaction named by `batch.txRef`.
+ * The caller supplies both the endpoint and expected instruction discriminator;
+ * neither value is inferred as trusted by this package.
+ */
+export interface ChainEvidenceSolanaRpc {
+  mode: "solana-rpc";
+  binding: "crinkl-platform-solana-create-batch-imprint/v1";
+  rpcUrl: string;
+  /** Injectable for testing; defaults to `globalThis.fetch`. */
+  fetch?: typeof fetch;
+}
+
+export type ChainEvidence = ChainEvidenceNone | ChainEvidenceProvided | ChainEvidenceRpc | ChainEvidenceSolanaRpc;
 
 export type AnchorStatus = "verified" | "not-checked" | "indeterminate";
 
@@ -439,6 +467,8 @@ export interface RewardCommitmentVerificationOptions {
   /** Defaults to `{ mode: "none" }`. */
   chainEvidence?: ChainEvidence;
   authorityTrust?: AuthorityTrustResolver;
+  /** Required by `chainEvidence.mode === "solana-rpc"`. */
+  solanaEvidenceTrust?: SolanaEvidenceTrustResolver;
 }
 
 export interface RewardCommitmentVerificationResult {
@@ -478,7 +508,10 @@ export interface RewardCommitmentVerificationResult {
  * highest rung this package could establish: a signed claim
  * (`"crypto-valid"`), a claim with an anchored batch-level reward liability
  * (`"committed"`), or a claim with a liability additionally attested as
- * economically backed (`"committed-backed"`).
+ * economically backed (`"committed-backed"`). For linkable 2a/2b batches,
+ * the composite may return a committed tier only when an exact
+ * `rewardInclusionProof` binds the verified spend metadata to the aggregate
+ * leaf; otherwise it remains `"crypto-valid"`.
  */
 export type SpendRewardClaimTier = "invalid" | "crypto-valid" | "committed" | "committed-backed";
 

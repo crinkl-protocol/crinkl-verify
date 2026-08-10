@@ -6,6 +6,7 @@ export {
 export { verifySpendHolderControl } from "./holder-control-v2.js";
 export { verifyW3cSpendAttestation } from "./w3c-v1.js";
 export { verifyRewardCommitmentV1 } from "./reward-commitment-v1.js";
+export { PLATFORM_SOLANA_CREATE_BATCH_IMPRINT_V1, verifySolanaBatchAnchor } from "./solana.js";
 export { verifySpendWithRewardCommitment } from "./spend-reward-commitment.js";
 export { EMPTY_LEAF_HASH_HEX, combineSorted, computeLeafHash, verifyInclusionProof } from "./merkle.js";
 export { computeSystemEventHash } from "./system-stream.js";
