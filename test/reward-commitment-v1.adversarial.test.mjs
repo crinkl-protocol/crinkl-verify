@@ -219,3 +219,73 @@ test("fails closed: wrong reward-commitment schemaVersion (2 instead of 1)", asy
   assert.equal(result.accepted, false);
   assert.ok(result.errors.some((e) => e.code === "SCHEMA_INVALID"));
 });
+
+test("fails closed: conflicting duplicate history events are never deduplicated", async () => {
+  const token = clone(case1a.token);
+  const history = token.systemEvents.slice(0, -1).map(clone);
+  token.systemEvents = [clone(token.commitmentEvent)];
+  const conflicting = clone(history[0]);
+  conflicting.payload = { ...conflicting.payload, publicKey: case1a.genesisPublicKeyBase64.replace(/.$/, "A") };
+  const result = await verifyRewardCommitmentV1(token, {
+    authorityTrust: trust1a,
+    systemStreamHistory: [...history, conflicting]
+  });
+  assert.equal(result.systemStreamValid, false);
+  assert.equal(result.authorityValid, false);
+  assert.equal(result.accepted, false);
+  assert.ok(result.errors.some((error) => error.code === "SYSTEM_STREAM_INVALID"));
+});
+
+test("fails closed: malformed, wrong-chain, gapped, and conflicting provider history", async () => {
+  const token = clone(case1a.token);
+  const fullHistory = token.systemEvents.slice(0, -1).map(clone);
+  token.systemEvents = [clone(token.commitmentEvent)];
+  const providers = [
+    async () => ({ success: true, data: { malformed: true } }),
+    async ({ chainId, headHash }) => ({ success: true, data: {
+      chainId,
+      requestedHeadHash: headHash,
+      events: [{ ...clone(fullHistory.at(-1)), chainId: "wrong-chain" }],
+      nextHeadHash: fullHistory.at(-1).prevHash,
+      hasMore: true
+    } }),
+    async ({ chainId, headHash }) => ({ success: true, data: {
+      chainId,
+      requestedHeadHash: headHash,
+      events: [clone(fullHistory.at(-1)), clone(fullHistory[0])],
+      nextHeadHash: null,
+      hasMore: false
+    } }),
+    async () => ({ success: false, error: "system_stream_history_conflict" })
+  ];
+  for (const systemStreamHistoryResolver of providers) {
+    const result = await verifyRewardCommitmentV1(token, {
+      authorityTrust: trust1a,
+      systemStreamHistoryResolver
+    });
+    assert.equal(result.accepted, false);
+    assert.equal(result.authorityValid, false);
+    assert.ok(result.errors.some((error) => error.code === "SYSTEM_STREAM_INVALID"));
+  }
+});
+
+test("fails closed: invalid history bounds never clamp or default", async () => {
+  const token = clone(case1a.token);
+  token.systemEvents = [clone(token.commitmentEvent)];
+  for (const bounds of [
+    { maxHistoryEvents: 0 },
+    { maxHistoryEvents: 1_000_001 },
+    { maxHistoryEvents: 1.5 },
+    { timeoutMs: 0 },
+    { timeoutMs: 120_001 }
+  ]) {
+    const result = await verifyRewardCommitmentV1(token, {
+      authorityTrust: trust1a,
+      systemStreamHistory: [],
+      ...bounds
+    });
+    assert.equal(result.systemStreamValid, false);
+    assert.equal(result.authorityValid, false);
+    assert.equal(result.accepted, false);
+  }
+});

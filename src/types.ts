@@ -380,6 +380,18 @@ export type AuthorityTrustResolver = (input: {
   validFrom: string;
 }) => boolean | Promise<boolean>;
 
+export interface SystemStreamHistoryResolverInput {
+  chainId: string;
+  headHash: string;
+  limit: number;
+  signal: AbortSignal;
+}
+
+/** Caller-owned source for the public, untrusted history-page envelope. */
+export type SystemStreamHistoryResolver = (
+  input: SystemStreamHistoryResolverInput
+) => unknown | Promise<unknown>;
+
 /** Skip on-chain anchoring entirely (default). Zero network access. */
 export interface ChainEvidenceNone {
   mode: "none";
@@ -467,6 +479,14 @@ export interface RewardCommitmentVerificationOptions {
   /** Defaults to `{ mode: "none" }`. */
   chainEvidence?: ChainEvidence;
   authorityTrust?: AuthorityTrustResolver;
+  /** Untrusted predecessor events supplied directly by the caller. */
+  systemStreamHistory?: readonly unknown[];
+  /** Untrusted hash-addressed history provider; never used unless explicitly supplied. */
+  systemStreamHistoryResolver?: SystemStreamHistoryResolver;
+  /** Defaults to 100,000; accepted range is 1 through 1,000,000. */
+  maxHistoryEvents?: number;
+  /** Defaults to 15,000 ms; accepted range is 1 through 120,000 ms. */
+  timeoutMs?: number;
   /** Required by `chainEvidence.mode === "solana-rpc"`. */
   solanaEvidenceTrust?: SolanaEvidenceTrustResolver;
 }
