@@ -105,7 +105,27 @@ test('chainEvidence mode "provided" flags a mismatching record as indeterminate,
     chainEvidence: { mode: "provided", tx: { batchId: batch.batchId, root: "0".repeat(64), schemaVersion: batch.schemaVersion } }
   });
   assert.equal(result.anchor, "indeterminate");
+  assert.equal(result.accepted, false);
   assert.ok(result.errors.some((error) => error.code === "CHAIN_EVIDENCE_MISMATCH"));
+});
+
+test('chainEvidence mode "solana-rpc" fails closed before network access for a noncanonical batch.txRef', async () => {
+  const fixtureCase = caseById("rewardCommitment.v1.committed.1a");
+  let called = false;
+  const result = await verifyRewardCommitmentV1(fixtureCase.token, {
+    authorityTrust: authorityTrustFor(fixtureCase),
+    chainEvidence: {
+      mode: "solana-rpc",
+      rpcUrl: "https://rpc.example",
+      instructionDiscriminatorHex: "f5f3194de5a7ac64",
+      fetch: async () => { called = true; throw new Error("must not be called"); }
+    },
+    solanaEvidenceTrust: () => true
+  });
+  assert.equal(called, false);
+  assert.equal(result.anchor, "indeterminate");
+  assert.equal(result.accepted, false);
+  assert.ok(result.errors.some((error) => error.code === "CHAIN_EVIDENCE_INVALID"));
 });
 
 test('chainEvidence mode "rpc" fetches exactly the caller-supplied url and verifies the response', async () => {

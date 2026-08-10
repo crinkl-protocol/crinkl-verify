@@ -1,6 +1,7 @@
 import { createInertJsonSnapshot, type JsonValue } from "./json.js";
 import { verifyInclusionProof } from "./merkle.js";
 import { findAuthorityRecordAt, replaySystemStreamSegment, validateSystemStreamEventShape } from "./system-stream.js";
+import { verifySolanaBatchAnchor } from "./solana.js";
 import type {
   AnchorStatus,
   ChainCommitmentRecordEvidence,
@@ -288,8 +289,19 @@ async function applyChainEvidence(result: RewardCommitmentVerificationResult, to
     return;
   }
 
-  // mode === "rpc": the only path that may touch the network, and only
-  // because the caller supplied a URL.
+  if (chainEvidence.mode === "solana-rpc") {
+    const verification = await verifySolanaBatchAnchor(token.batch, token.chainId, chainEvidence, options.solanaEvidenceTrust);
+    if (!verification.valid) {
+      addError(result, verification.mismatch ? "CHAIN_EVIDENCE_MISMATCH" : "CHAIN_EVIDENCE_INVALID", verification.message ?? "Solana evidence is invalid.", verification.cause ?? "network", verification.path);
+      result.anchor = "indeterminate";
+      return;
+    }
+    result.anchor = "verified";
+    return;
+  }
+
+  // mode === "rpc": caller-directed package convenience endpoint returning
+  // an already-decoded logical record, not raw chain transport.
   if (!isNonEmptyString(chainEvidence.url)) {
     addError(result, "CHAIN_EVIDENCE_INVALID", "chainEvidence.mode is \"rpc\" but no url was supplied.", "input", "$.options.chainEvidence.url");
     result.anchor = "indeterminate";
@@ -431,7 +443,8 @@ export async function verifyRewardCommitmentV1(input: unknown, options: RewardCo
     result.authorityValid === true &&
     result.commitmentValid &&
     result.merkleValid &&
-    (result.economicTier !== "COMMITTED_BACKED" || result.backingValid === true);
+    (result.economicTier !== "COMMITTED_BACKED" || result.backingValid === true) &&
+    ((options.chainEvidence?.mode ?? "none") === "none" || result.anchor === "verified");
 
   return result;
 }

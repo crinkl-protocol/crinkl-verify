@@ -431,7 +431,33 @@ export interface ChainEvidenceRpc {
   fetch?: typeof fetch;
 }
 
-export type ChainEvidence = ChainEvidenceNone | ChainEvidenceProvided | ChainEvidenceRpc;
+/** Caller-owned authorization for one Solana RPC trust boundary. */
+export interface SolanaEvidenceTrustInput {
+  cluster: string;
+  rpcUrl: string;
+  programId: string;
+  instructionDiscriminatorHex: string;
+  requiredFinality: "finalized";
+}
+
+export type SolanaEvidenceTrustResolver = (
+  input: SolanaEvidenceTrustInput
+) => boolean | Promise<boolean>;
+
+/**
+ * Fetch and decode the finalized Solana transaction named by `batch.txRef`.
+ * The caller supplies both the endpoint and expected instruction discriminator;
+ * neither value is inferred as trusted by this package.
+ */
+export interface ChainEvidenceSolanaRpc {
+  mode: "solana-rpc";
+  rpcUrl: string;
+  instructionDiscriminatorHex: string;
+  /** Injectable for testing; defaults to `globalThis.fetch`. */
+  fetch?: typeof fetch;
+}
+
+export type ChainEvidence = ChainEvidenceNone | ChainEvidenceProvided | ChainEvidenceRpc | ChainEvidenceSolanaRpc;
 
 export type AnchorStatus = "verified" | "not-checked" | "indeterminate";
 
@@ -439,6 +465,8 @@ export interface RewardCommitmentVerificationOptions {
   /** Defaults to `{ mode: "none" }`. */
   chainEvidence?: ChainEvidence;
   authorityTrust?: AuthorityTrustResolver;
+  /** Required by `chainEvidence.mode === "solana-rpc"`. */
+  solanaEvidenceTrust?: SolanaEvidenceTrustResolver;
 }
 
 export interface RewardCommitmentVerificationResult {

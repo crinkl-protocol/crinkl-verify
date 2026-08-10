@@ -126,14 +126,50 @@ substitute for, the signed system-stream check:
 
 - `{ mode: "none" }` (default) — skip anchoring; `anchor: "not-checked"`.
 - `{ mode: "provided", tx }` — verify offline against a caller-already-decoded
-  on-chain commitment record. Not raw transaction bytes: the protocol leaves
-  chain-specific memo/anchor binding formats undefined outside this
-  spec snapshot (`COMMITMENT_LAYER.md#chain-bindings` says such bindings are
-  "documented separately"; no such document exists for reward-commitment
-  batches here), so this package does not invent one.
-- `{ mode: "rpc", url }` — the only path that may touch the network, and only
-  because the caller passed a URL; fetches `url` and applies the same
-  consistency check as `"provided"`.
+  logical commitment record. This checks consistency with the token; it does
+  not independently authenticate where the caller obtained that record.
+- `{ mode: "rpc", url }` — caller-directed logical-record lookup; fetches the
+  supplied `url` and applies the same
+  logical-record consistency check as `"provided"`. This package convenience
+  endpoint is not Solana JSON-RPC.
+- `{ mode: "solana-rpc", rpcUrl, instructionDiscriminatorHex }` — fetch raw
+  `getTransaction`, `getSignatureStatuses`, and `getBlock` JSON-RPC responses.
+  The decoder requires the exact cluster, program, slot, transaction position,
+  instruction position, 8-byte discriminator, batch ID mapping, root,
+  `leafCount`, schema family, successful execution, and finalized status.
+
+Raw Solana mode requires the caller to authorize all trust-bearing inputs before
+the package performs network access:
+
+```js
+const result = await verifyRewardCommitmentV1(rewardCommitmentToken, {
+  authorityTrust: ({ chainId, authorityId, publicKeyBase64 }) =>
+    localAuthorityRegistry.allows(chainId, authorityId, publicKeyBase64),
+  chainEvidence: {
+    mode: "solana-rpc",
+    rpcUrl: "https://api.devnet.solana.com",
+    // create_batch_imprint; pin from the adopted Platform/on-chain binding.
+    instructionDiscriminatorHex: "f5f3194de5a7ac64"
+  },
+  solanaEvidenceTrust: ({
+    cluster,
+    rpcUrl,
+    programId,
+    instructionDiscriminatorHex,
+    requiredFinality
+  }) =>
+    cluster === "devnet" &&
+    rpcUrl === "https://api.devnet.solana.com" &&
+    programId === configuredCommitmentProgramId &&
+    instructionDiscriminatorHex === "f5f3194de5a7ac64" &&
+    requiredFinality === "finalized"
+});
+```
+
+`issuerTrust`, `rewardCommitment.authorityTrust`, and
+`rewardCommitment.solanaEvidenceTrust` belong to the calling application. The
+package supplies no trusted issuer, Authority Registry root, Solana cluster,
+RPC endpoint, program ID, or instruction discriminator.
 
 `verifySpendWithRewardCommitment` composes native spend verification with (1)
 and, when the batch leaf schema is linkable (`2a`/`2b`), the optional
