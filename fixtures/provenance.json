@@ -7,6 +7,12 @@
   },
   "artifacts": [
     {
+      "path": "protocol/applications/schemas/pwa_spend_resolver_manifest_v1.schema.json",
+      "commit": "bcedaa30b52f791e07a8fc15198c722a992b7509",
+      "sha256": "0a90a9ab983107bb87680724a5173cc4ff47a5a42aaf865fa6f4a0ade3f25b11",
+      "usedBy": "fixtures/pwa-spend-resolver-v1.json (fixture-only P3.1h resolver-bundle shape; no runtime authority)"
+    },
+    {
       "path": "conformance/v1/vectors/token.spendAttestation.portableV1.fromSpendStream.json",
       "sha256": "2303b9a2da50f1185cd76f990bc684eb7449559e3bea7aa0d608d66f5dd014de",
       "usedBy": "fixtures/native-v1.json"

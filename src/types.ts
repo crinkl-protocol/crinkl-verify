@@ -123,6 +123,80 @@ export interface W3cVerificationOptions {
 
 export interface VerificationOptions extends NativeVerificationOptions, W3cVerificationOptions {}
 
+/** Offline-only P3.1h resolver-bundle input. Transport, caches, and rewards are intentionally absent. */
+export interface PwaSpendResolverBundleV1 {
+  manifest: unknown;
+  issuerSetSnapshot: unknown;
+  headSetSnapshot: unknown;
+  headInclusionProof: unknown;
+  spendToken: unknown;
+}
+
+export interface PwaSpendResolverBootstrapAuthorityV1 {
+  authorityRef: string;
+  issuedBy: string;
+  keyId: string;
+  publicKey: string;
+}
+
+export interface PwaSpendResolverAcceptedManifestStateV1 {
+  manifestSeriesId: string;
+  sequence: number;
+  manifestRef: string;
+}
+
+/** Caller-held, previously verified issuer-snapshot continuity evidence. */
+export interface PwaSpendResolverAcceptedIssuerSetSnapshotStateV1 {
+  issuerSetId: string;
+  sequence: number;
+  issuerSetSnapshotRef: string;
+}
+
+/** Caller-held, previously verified head-snapshot continuity evidence. */
+export interface PwaSpendResolverAcceptedHeadSetSnapshotStateV1 {
+  headSetId: string;
+  sequence: number;
+  headSetSnapshotRef: string;
+}
+
+export interface PwaSpendResolverVerificationOptions {
+  /** Application-pinned bootstrap identity; never resolved from the bundle. */
+  bootstrapAuthority: PwaSpendResolverBootstrapAuthorityV1;
+  acceptedManifestState?: readonly PwaSpendResolverAcceptedManifestStateV1[];
+  acceptedIssuerSetSnapshotState?: readonly PwaSpendResolverAcceptedIssuerSetSnapshotStateV1[];
+  acceptedHeadSetSnapshotState?: readonly PwaSpendResolverAcceptedHeadSetSnapshotStateV1[];
+  /** Optional local UX clock; it can only make the result fail closed as stale. */
+  now?: string;
+}
+
+export type PwaSpendResolverErrorCode =
+  | "RESOLVER_BUNDLE_SCHEMA_INVALID" | "RESOLVER_MANIFEST_HASH_MISMATCH"
+  | "RESOLVER_SIGNATURE_INVALID" | "RESOLVER_BOOTSTRAP_UNAUTHORIZED"
+  | "RESOLVER_SOURCE_AUTHORITY_MISMATCH" | "RESOLVER_ARTIFACT_REF_MISMATCH"
+  | "RESOLVER_ISSUER_POLICY_REJECTED" | "RESOLVER_SPEND_REJECTED"
+  | "RESOLVER_LEAF_PROOF_INVALID" | "RESOLVER_CONTINUITY_REJECTED" | "RESOLVER_STALE";
+
+export interface PwaSpendResolverVerificationResult {
+  verified: boolean;
+  currentReliance: false;
+  error?: PwaSpendResolverErrorCode;
+  facts?: {
+    manifestRef: string;
+    manifestSeriesId: string;
+    manifestSequence: number;
+    issuerSetSnapshotRef: string;
+    issuerSetId: string;
+    issuerSetSequence: number;
+    headSetSnapshotRef: string;
+    headSetId: string;
+    headSetSequence: number;
+    spendId: string;
+    tokenHash: string;
+    expectedIssuer: string;
+    snapshotAsOf: string;
+  };
+}
+
 export interface SpendAttestationTokenV1 {
   tokenType: "SPEND_ATTESTATION";
   schemaVersion: 1;
