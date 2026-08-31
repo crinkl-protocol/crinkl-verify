@@ -10,6 +10,7 @@ export { PLATFORM_SOLANA_CREATE_BATCH_IMPRINT_V1, verifySolanaBatchAnchor } from
 export { verifySpendWithRewardCommitment } from "./spend-reward-commitment.js";
 export { EMPTY_LEAF_HASH_HEX, combineSorted, computeLeafHash, verifyInclusionProof } from "./merkle.js";
 export { computeSystemEventHash } from "./system-stream.js";
+export { verifyPwaSpendResolverBundleV1 } from "./spend-resolver-v1.js";
 export type * from "./types.js";
 
 import { detectArtifactFormatFromSnapshot } from "./format.js";

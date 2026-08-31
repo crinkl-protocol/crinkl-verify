@@ -14,6 +14,16 @@ intentionally experimental and fails closed
 until a released Crinkl profile bundle pins its context, schemas, vectors,
 issuer-key history, and status/refresh rules.
 
+## P3.1h resolver bundle (fixture-only)
+
+`verifyPwaSpendResolverBundleV1` is a pure, fetch-free verifier for the additive
+P3.1h resolver-manifest and its supplied issuer/head snapshots, canonical head
+leaf, inclusion proof, and Spend Token. It verifies JCS hashes and Ed25519 raw
+digest signatures, the separately app-pinned bootstrap authority, source-publisher
+authority, cutoff/key/namespace bindings, proof tuple, issuer derivation, and
+manifest continuity. It always returns `currentReliance: false`; it does not fetch,
+cache, renew freshness, verify a reward or claim, or activate any authority.
+
 ## Install
 
 ```bash
