@@ -9,6 +9,7 @@ import type {
 } from "./types.js";
 
 const HASH = /^[0-9a-f]{64}$/;
+const AMOUNT = /^(0|[1-9][0-9]*)$/;
 const VERSION = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
@@ -99,7 +100,7 @@ export function validateSystemStreamEventShape(input: JsonValue, path: string): 
   if (!isNonEmptyString(value.signedBy)) return { error: `${path}.signedBy: must be a non-empty string.` };
   const payload = object(value.payload as JsonValue);
   if (!payload) return { error: `${path}.payload: must be a JSON object.` };
-  if (typeof value.timestamp !== "string" || !TIMESTAMP.test(value.timestamp)) return { error: `${path}.timestamp: must be a valid UTC millisecond timestamp.` };
+  if (!isRfc3339UtcMillisecond(value.timestamp)) return { error: `${path}.timestamp: must be a valid UTC millisecond timestamp.` };
   if (typeof value.protocolVersion !== "string" || !VERSION.test(value.protocolVersion)) return { error: `${path}.protocolVersion: must be SemVer 2.0 compatible.` };
   if (typeof value.eventHash !== "string" || !HASH.test(value.eventHash)) return { error: `${path}.eventHash: must be a lowercase SHA-256 hex digest.` };
   if (value.prevHash !== null && (typeof value.prevHash !== "string" || !HASH.test(value.prevHash))) return { error: `${path}.prevHash: must be null or a lowercase SHA-256 hex digest.` };
@@ -156,12 +157,41 @@ function orderSegment(events: readonly SystemStreamEvent[]): { ordered: SystemSt
 
 function effectiveTime(event: SystemStreamEvent): string {
   const candidates = [event.payload.committedAt, event.payload.registeredAt, event.payload.revokedAt, event.payload.backedAt];
-  const found = candidates.find((candidate) => typeof candidate === "string");
-  return typeof found === "string" ? found : event.timestamp;
+  const found = candidates.find(isRfc3339UtcMillisecond);
+  return found ?? event.timestamp;
 }
 
 function authorityValidAt(record: AuthorityRecordState, atTime: string): boolean {
-  return record.validFrom <= atTime && (record.validUntil === null || atTime < record.validUntil);
+  return isRfc3339UtcMillisecond(record.validFrom)
+    && isRfc3339UtcMillisecond(atTime)
+    && (record.validUntil === null || isRfc3339UtcMillisecond(record.validUntil))
+    && record.validFrom <= atTime
+    && (record.validUntil === null || atTime < record.validUntil);
+}
+
+function countAuthoritiesValidAt(registry: ReadonlyMap<string, AuthorityRecordState>, atTime: string): number {
+  let count = 0;
+  for (const record of registry.values()) {
+    if (authorityValidAt(record, atTime)) count += 1;
+  }
+  return count;
+}
+
+function authorityWindowsOverlap(left: AuthorityRecordState, right: AuthorityRecordState): boolean {
+  return (left.validUntil === null || right.validFrom < left.validUntil)
+    && (right.validUntil === null || left.validFrom < right.validUntil);
+}
+
+function registryHasOverlappingAuthorityWindows(registry: ReadonlyMap<string, AuthorityRecordState>): boolean {
+  const ordered = [...registry.values()].sort((left, right) => left.validFrom < right.validFrom ? -1 : left.validFrom > right.validFrom ? 1 : 0);
+  let latestValidUntil: string | null | undefined;
+  for (const record of ordered) {
+    if (latestValidUntil === null || (latestValidUntil !== undefined && record.validFrom < latestValidUntil)) return true;
+    if (record.validUntil === null || latestValidUntil === undefined || record.validUntil > latestValidUntil) {
+      latestValidUntil = record.validUntil;
+    }
+  }
+  return false;
 }
 
 const CHECKPOINT_SUFFIX_EVENT_NAMES = new Set([
@@ -176,8 +206,11 @@ function exactlyKeys(value: { readonly [key: string]: JsonValue }, keys: readonl
   return Object.keys(value).length === keys.length && keys.every((key) => Object.prototype.hasOwnProperty.call(value, key));
 }
 
-function isTimestamp(value: unknown): value is string {
-  return typeof value === "string" && TIMESTAMP.test(value);
+/** True only for canonical RFC 3339 UTC timestamps with millisecond precision. */
+export function isRfc3339UtcMillisecond(value: unknown): value is string {
+  if (typeof value !== "string" || !TIMESTAMP.test(value)) return false;
+  const milliseconds = Date.parse(value);
+  return Number.isFinite(milliseconds) && new Date(milliseconds).toISOString() === value;
 }
 
 function isEd25519PublicKey(value: unknown): value is string {
@@ -185,7 +218,37 @@ function isEd25519PublicKey(value: unknown): value is string {
   return bytes !== undefined && bytes.length === 32;
 }
 
-function validateCheckpointSuffixEvent(event: SystemStreamEvent): string | undefined {
+function isPoints(value: unknown): value is string {
+  return typeof value === "string" && AMOUNT.test(value);
+}
+
+function validCommittedPayload(payload: { readonly [key: string]: JsonValue }): boolean {
+  return exactlyKeys(payload, ["batchId", "root", "leafCount", "totalPoints", "schemaVersion", "txRef", "committedAt"])
+    && isNonEmptyString(payload.batchId)
+    && typeof payload.root === "string" && HASH.test(payload.root)
+    && Number.isSafeInteger(payload.leafCount) && Number(payload.leafCount) > 0
+    && isPoints(payload.totalPoints)
+    && (payload.schemaVersion === "2a" || payload.schemaVersion === "2b")
+    && isNonEmptyString(payload.txRef)
+    && isRfc3339UtcMillisecond(payload.committedAt);
+}
+
+function validBackingPayload(payload: { readonly [key: string]: JsonValue }): boolean {
+  const backingAsset = object(payload.backingAsset as JsonValue);
+  return exactlyKeys(payload, ["batchId", "backingAsset", "backingAmount", "backingVault", "backingTxRef", "backedAt"])
+    && isNonEmptyString(payload.batchId)
+    && !!backingAsset
+    && exactlyKeys(backingAsset, ["chainId", "mint", "decimals"])
+    && isNonEmptyString(backingAsset.chainId)
+    && isNonEmptyString(backingAsset.mint)
+    && Number.isSafeInteger(backingAsset.decimals) && Number(backingAsset.decimals) >= 0
+    && isPoints(payload.backingAmount)
+    && isNonEmptyString(payload.backingVault)
+    && isNonEmptyString(payload.backingTxRef)
+    && isRfc3339UtcMillisecond(payload.backedAt);
+}
+
+export function validateCheckpointSuffixEvent(event: SystemStreamEvent): string | undefined {
   if (!CHECKPOINT_SUFFIX_EVENT_NAMES.has(event.eventName)) return `Checkpoint suffix eventName "${event.eventName}" is unsupported.`;
   if (event.protocolVersion !== CHECKPOINT_PROTOCOL_VERSION) return `Checkpoint suffix event protocolVersion must equal ${CHECKPOINT_PROTOCOL_VERSION}.`;
   const expectedEventId = `sha256:${sha256HexUtf8(canonicalizeJcs({
@@ -195,6 +258,8 @@ function validateCheckpointSuffixEvent(event: SystemStreamEvent): string | undef
     protocolVersion: event.protocolVersion
   }))}`;
   if (event.eventId !== expectedEventId) return "Checkpoint suffix eventId does not match its canonical event domain.";
+  if (event.eventName === "REWARD_BATCH_COMMITTED" && !validCommittedPayload(event.payload)) return "REWARD_BATCH_COMMITTED payload is malformed.";
+  if (event.eventName === "REWARD_BATCH_BACKING_ATTESTED" && !validBackingPayload(event.payload)) return "REWARD_BATCH_BACKING_ATTESTED payload is malformed.";
   return undefined;
 }
 
@@ -370,6 +435,8 @@ export async function replaySystemStreamSuffix(
   }
   if (!integrityValid) return { ordered, integrityValid, fork, gap, registry, eventSignatureValid, errors };
 
+  const eventIds = new Set<string>();
+  let pendingRotation: { predecessorId: string; successorId: string; boundary: string } | undefined;
   for (const event of ordered) {
     const shapeError = validateCheckpointSuffixEvent(event);
     if (shapeError) {
@@ -377,8 +444,37 @@ export async function replaySystemStreamSuffix(
       errors.push({ code: "SYSTEM_STREAM_INVALID", message: shapeError, cause: "input", path: "$.systemEventSuffix" });
       continue;
     }
+    if (eventIds.has(event.eventId)) {
+      eventSignatureValid.set(event.eventHash, false);
+      errors.push({ code: "SYSTEM_STREAM_INVALID", message: `systemEventSuffix repeats eventId ${event.eventId}.`, cause: "input", path: "$.systemEventSuffix" });
+      continue;
+    }
+    eventIds.add(event.eventId);
+    if (pendingRotation) {
+      const payload = event.payload;
+      if (
+        event.eventName !== "AUTHORITY_REVOKED"
+        || event.signedBy !== pendingRotation.successorId
+        || payload.authorityId !== pendingRotation.predecessorId
+        || payload.revokedBy !== pendingRotation.successorId
+        || payload.validUntil !== pendingRotation.boundary
+        || payload.revokedAt !== pendingRotation.boundary
+      ) {
+        eventSignatureValid.set(event.eventHash, false);
+        errors.push({ code: "SYSTEM_STREAM_INVALID", message: "A transient authority overlap must be closed by the exact immediate successor-signed revocation at its validFrom boundary.", cause: "input", path: "$.systemEventSuffix" });
+        break;
+      }
+    }
     const signer = registry.get(event.signedBy);
     const at = effectiveTime(event);
+    if (
+      (event.eventName === "REWARD_BATCH_COMMITTED" || event.eventName === "REWARD_BATCH_BACKING_ATTESTED")
+      && countAuthoritiesValidAt(registry, at) !== 1
+    ) {
+      eventSignatureValid.set(event.eventHash, false);
+      errors.push({ code: "AUTHORITY_INVALID", message: `ordinary ${event.eventName} evidence is ambiguous because it has more than one valid authority at effective time ${at}.`, cause: "trust", path: "$.systemEventSuffix" });
+      continue;
+    }
     if (!signer || !authorityValidAt(signer, at)) {
       eventSignatureValid.set(event.eventHash, false);
       errors.push({ code: "AUTHORITY_INVALID", message: `signedBy "${event.signedBy}" is not a valid authority for chainId "${chainId}" at effective time ${at}.`, cause: "trust", path: "$.systemEventSuffix" });
@@ -398,13 +494,19 @@ export async function replaySystemStreamSuffix(
       const registeredAt = event.payload.registeredAt;
       if (
         exactlyKeys(event.payload, ["authorityId", "publicKey", "validFrom", "predecessorId", "txRef", "registeredAt"])
-        && isNonEmptyString(authorityId) && isEd25519PublicKey(publicKey) && isTimestamp(validFrom)
+        && isNonEmptyString(authorityId) && isEd25519PublicKey(publicKey) && isRfc3339UtcMillisecond(validFrom)
         && isNonEmptyString(predecessorId) && predecessorId === event.signedBy && registry.has(predecessorId)
-        && isNonEmptyString(event.payload.txRef) && isTimestamp(registeredAt)
-        && validFrom >= registeredAt
+        && isNonEmptyString(event.payload.txRef) && isRfc3339UtcMillisecond(registeredAt)
+        && registeredAt >= event.timestamp && validFrom >= registeredAt
         && !registry.has(authorityId)
+        && ![...registry.values()].some((record) => record.publicKeyBase64 === publicKey)
       ) {
-        registry.set(authorityId, { publicKeyBase64: publicKey, chainId, validFrom, validUntil: null });
+        const successor = { publicKeyBase64: publicKey, chainId, validFrom, validUntil: null };
+        const predecessor = registry.get(predecessorId);
+        registry.set(authorityId, successor);
+        if (predecessor && authorityWindowsOverlap(predecessor, successor)) {
+          pendingRotation = { predecessorId, successorId: authorityId, boundary: validFrom };
+        }
       } else {
         errors.push({ code: "SYSTEM_STREAM_INVALID", message: `AUTHORITY_REGISTERED payload is malformed, does not name its valid signing predecessor, or attempts a duplicate registration for eventId ${event.eventId}.`, cause: "input", path: "$.systemEventSuffix" });
       }
@@ -415,9 +517,9 @@ export async function replaySystemStreamSuffix(
       const revokedAt = event.payload.revokedAt;
       if (
         !exactlyKeys(event.payload, ["authorityId", "validUntil", "revokedBy", "reason", "txRef", "revokedAt"])
-        || !isNonEmptyString(authorityId) || !isTimestamp(validUntil) || !isNonEmptyString(revokedBy)
+        || !isNonEmptyString(authorityId) || !isRfc3339UtcMillisecond(validUntil) || !isNonEmptyString(revokedBy)
         || revokedBy !== event.signedBy || !isNonEmptyString(event.payload.reason) || !isNonEmptyString(event.payload.txRef)
-        || !isTimestamp(revokedAt) || validUntil !== revokedAt || revokedAt < event.timestamp
+        || !isRfc3339UtcMillisecond(revokedAt) || validUntil !== revokedAt || revokedAt < event.timestamp
       ) {
         errors.push({ code: "SYSTEM_STREAM_INVALID", message: `AUTHORITY_REVOKED payload is malformed, retroactive, or revokedBy does not match signedBy for eventId ${event.eventId}.`, cause: "input", path: "$.systemEventSuffix" });
         continue;
@@ -428,7 +530,12 @@ export async function replaySystemStreamSuffix(
         continue;
       }
       target.validUntil = validUntil;
+      if (pendingRotation) pendingRotation = undefined;
     }
+  }
+
+  if (pendingRotation || registryHasOverlappingAuthorityWindows(registry)) {
+    errors.push({ code: "SYSTEM_STREAM_INVALID", message: "Authority validity windows must not retain a transient overlap after suffix replay.", cause: "input", path: "$.systemEventSuffix" });
   }
 
   return { ordered, integrityValid, fork, gap, registry, eventSignatureValid, errors };
