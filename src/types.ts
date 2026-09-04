@@ -423,7 +423,7 @@ export interface RewardCommitmentTokenV2 {
   recipientId: string;
   leaf: { readonly [key: string]: JsonValue };
   proof: InclusionProofV1;
-  rewardInclusionProof?: RewardInclusionProofV1;
+  rewardInclusionProof: RewardInclusionProofV1;
   [key: string]: unknown;
 }
 
@@ -629,6 +629,8 @@ export interface RewardCommitmentV2VerificationResult {
   authorityValid: boolean | "not_checked";
   commitmentValid: boolean;
   merkleValid: boolean;
+  /** The mandatory linkable reward-event proof verifies against leaf.rewardEventsRoot. */
+  rewardInclusionProofValid: boolean;
   economicTier: "COMMITTED" | "COMMITTED_BACKED" | "unknown";
   backingValid: boolean | "not_applicable";
   anchor: AnchorStatus;
@@ -674,6 +676,26 @@ export interface SpendWithRewardCommitmentResult {
   tier: SpendRewardClaimTier;
   spend: VerificationResult;
   rewardCommitment?: RewardCommitmentVerificationResult;
+  linkage: SpendRewardLinkageStatus;
+  anchor: AnchorStatus;
+  errors: VerificationError[];
+  warnings: VerificationWarning[];
+}
+
+/** Options for the checkpoint-backed V2 spend/reward composite only. */
+export interface SpendRewardCommitmentV2Options extends NativeVerificationOptions {
+  rewardCommitment?: RewardCommitmentV2VerificationOptions;
+}
+
+/**
+ * Separate V2 composite result. A verified reward inclusion proof is not
+ * enough by itself: this composite additionally binds its exact spendId and
+ * rewardEventHash to the independently verified Spend Token.
+ */
+export interface SpendRewardCommitmentV2Result {
+  tier: SpendRewardClaimTier;
+  spend: VerificationResult;
+  rewardCommitment?: RewardCommitmentV2VerificationResult;
   linkage: SpendRewardLinkageStatus;
   anchor: AnchorStatus;
   errors: VerificationError[];

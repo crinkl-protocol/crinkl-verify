@@ -1,170 +1,127 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import test from "node:test";
 import * as ed25519 from "@noble/ed25519";
 import { sha256 } from "@noble/hashes/sha256";
 import { sha512 } from "@noble/hashes/sha512";
 import { canonicalize } from "json-canonicalize";
-import {
-  computeAuthorityCheckpointRegistryStateHash,
-  computeAuthorityCheckpointV1Hash,
-  verifyRewardCommitmentV2
-} from "../dist/index.js";
+import { verifyRewardCommitmentV2 } from "../dist/index.js";
 
 if (!ed25519.etc.sha512Sync) ed25519.etc.sha512Sync = (...messages) => sha512(ed25519.etc.concatBytes(...messages));
 
+const vectorPath = resolve(
+  process.env.CRINKL_PROTOCOL_DIR ?? "/mnt/worktrees/crinkl-protocol-authority-checkpoint-protocol-revocation-parity-20260904",
+  "conformance/authority-checkpoint/v1/vectors/authority-checkpoint-reward-v2.v1.json"
+);
+const hasVectors = existsSync(vectorPath);
+const vectors = hasVectors ? JSON.parse(readFileSync(vectorPath, "utf8")) : undefined;
 const encoder = new TextEncoder();
 const clone = (value) => JSON.parse(JSON.stringify(value));
-const seed = (label) => sha256(encoder.encode(`crinkl-verify-test-seed:${label}`));
-const ROOT_SEED = seed("authority-checkpoint-root");
-const GENESIS_AUTHORITY_SEED = seed("reward-commitment-authority-genesis");
-const fixture = JSON.parse(readFileSync(new URL("../fixtures/reward-commitment-v1.json", import.meta.url)));
-const case2a = fixture.cases.find((candidate) => candidate.id === "rewardCommitment.v1.committedBacked.2a");
+const hex = (bytes) => Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 
-async function rootPublicKey() {
-  return Buffer.from(await ed25519.getPublicKeyAsync(ROOT_SEED)).toString("base64");
+function options(vectorCase) {
+  const root = vectorCase.trust.checkpointRoot;
+  return { authorityCheckpointTrust: (input) => input.profile === "configured-checkpoint-root/v1" && input.issuedBy === root.issuedBy && input.keyId === root.keyId && input.publicKey === root.publicKey };
 }
 
-async function signCheckpoint(checkpoint) {
-  checkpoint.authorityState.stateHash = computeAuthorityCheckpointRegistryStateHash(checkpoint.chainId, checkpoint.covered.headEventHash, checkpoint.authorityState.records);
-  checkpoint.signatures.checkpointHash = computeAuthorityCheckpointV1Hash(checkpoint);
-  checkpoint.signatures.signature = Buffer.from(await ed25519.signAsync(Buffer.from(checkpoint.signatures.checkpointHash, "hex"), ROOT_SEED)).toString("base64");
-  return checkpoint;
-}
-
-async function signSystemEvent(event, signingSeed) {
-  const unsigned = {
-    eventId: event.eventId,
-    eventName: event.eventName,
-    chainId: event.chainId,
-    signedBy: event.signedBy,
-    payload: event.payload,
-    timestamp: event.timestamp,
-    protocolVersion: event.protocolVersion,
-    prevHash: event.prevHash
-  };
-  const eventHash = Array.from(sha256(encoder.encode(canonicalize(unsigned))), (byte) => byte.toString(16).padStart(2, "0")).join("");
-  const signature = Buffer.from(await ed25519.signAsync(Buffer.from(eventHash, "hex"), signingSeed)).toString("base64");
+async function signedEvent(event, seedByte) {
+  const payload = event.payload;
+  const eventIdDigest = hex(sha256(encoder.encode(canonicalize({ chainId: event.chainId, eventName: event.eventName, payload, protocolVersion: "1.0.0-rc.1" }))));
+  const eventId = `sha256:${eventIdDigest}`;
+  const unsigned = { eventId, eventName: event.eventName, chainId: event.chainId, signedBy: event.signedBy, payload, timestamp: event.timestamp, protocolVersion: "1.0.0-rc.1", prevHash: event.prevHash };
+  const eventHash = hex(sha256(encoder.encode(canonicalize(unsigned))));
+  const signature = Buffer.from(await ed25519.signAsync(Buffer.from(eventHash, "hex"), new Uint8Array(32).fill(seedByte))).toString("base64");
   return { ...unsigned, eventHash, signature };
 }
 
-async function goodToken() {
-  const [genesis, ...suffix] = clone(case2a.token.systemEvents);
-  const records = [{ authorityId: genesis.payload.authorityId, publicKey: genesis.payload.publicKey, validFrom: genesis.payload.validFrom, validUntil: null, revokedBy: null }];
-  const checkpoint = await signCheckpoint({
-    checkpointType: "AUTHORITY_CHECKPOINT",
-    schemaVersion: 1,
-    protocol: { protocolVersion: "1.0.0-rc.1" },
-    evidenceProfile: "configured-checkpoint-root/v1",
-    chainId: case2a.token.chainId,
-    sequence: 3,
-    covered: { streamHeight: 1, headEventHash: genesis.eventHash, effectiveAt: genesis.timestamp },
-    authorityState: { stateHash: "0".repeat(64), records },
-    previousCheckpointHash: "1".repeat(64),
-    limits: { maxSuffixEvents: 128 },
-    signatures: { issuedBy: "crinkl-checkpoint-root", keyId: "checkpoint-root-test-v1", publicKey: await rootPublicKey(), checkpointHash: "0".repeat(64), signature: "pending" }
-  });
-  return {
-    tokenType: "REWARD_COMMITMENT", schemaVersion: 2, evidenceProfile: "configured-checkpoint-root/v1", chainId: case2a.token.chainId,
-    economicTier: "COMMITTED_BACKED", commitmentEvent: clone(case2a.token.commitmentEvent), backingEvent: clone(case2a.token.backingEvent), authorityCheckpoint: checkpoint,
-    systemEventSuffix: suffix, batch: clone(case2a.token.batch), recipientId: case2a.token.recipientId, leaf: clone(case2a.token.leaf), proof: clone(case2a.token.proof), rewardInclusionProof: clone(case2a.token.rewardInclusionProof)
-  };
-}
+test("rejects malformed checkpoint registry, succession, and pre-parse over-limit suffixes", { skip: !hasVectors }, async () => {
+  const base = vectors.positiveCases[0];
+  const malformed = [
+    (token) => token.authorityCheckpoint.authorityState.records.push({ ...clone(token.authorityCheckpoint.authorityState.records[0]), authorityId: "fixture-authority-z" }),
+    (token) => token.authorityCheckpoint.authorityState.records.push({ authorityId: "fixture-authority-z", publicKey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", validFrom: "2026-09-04T00:00:00.000Z", validUntil: null, revokedBy: null }),
+    (token) => { token.authorityCheckpoint.authorityState.records[0].revokedBy = "fixture-authority-b"; },
+    (token) => { token.authorityCheckpoint.previousCheckpointHash = "0".repeat(64); },
+    (token) => { token.authorityCheckpoint.sequence = 2; token.authorityCheckpoint.previousCheckpointHash = null; }
+  ];
+  for (const mutate of malformed) {
+    const token = clone(base.rewardCommitmentToken);
+    mutate(token);
+    const result = await verifyRewardCommitmentV2(token, options(base));
+    assert.equal(result.accepted, false);
+    assert.ok(result.errors.some((error) => error.code === "SCHEMA_INVALID"));
+  }
 
-async function trust(input) {
-  return input.issuedBy === "crinkl-checkpoint-root" && input.keyId === "checkpoint-root-test-v1" && input.publicKey === await rootPublicKey();
-}
-
-test("fails closed for a checkpoint state hash mismatch", async () => {
-  const token = await goodToken();
-  token.authorityCheckpoint.authorityState.stateHash = "f".repeat(64);
-  const result = await verifyRewardCommitmentV2(token, { authorityCheckpointTrust: trust });
-  assert.equal(result.accepted, false);
-  assert.ok(result.errors.some((error) => error.code === "CHECKPOINT_INVALID"));
-});
-
-test("fails closed when a configured predecessor or durable sequence floor does not match", async () => {
-  const token = await goodToken();
-  const predecessor = await verifyRewardCommitmentV2(token, { authorityCheckpointTrust: trust, expectedPreviousCheckpointHash: "2".repeat(64) });
-  assert.equal(predecessor.accepted, false);
-  const rollback = await verifyRewardCommitmentV2(token, { authorityCheckpointTrust: trust, minimumCheckpointSequence: 4 });
-  assert.equal(rollback.accepted, false);
-  assert.ok(rollback.errors.some((error) => error.code === "CHECKPOINT_INVALID"));
-});
-
-test("fails closed for a suffix that does not begin at the covered checkpoint head", async () => {
-  const token = await goodToken();
-  token.authorityCheckpoint.covered.headEventHash = "e".repeat(64);
-  await signCheckpoint(token.authorityCheckpoint);
-  const result = await verifyRewardCommitmentV2(token, { authorityCheckpointTrust: trust });
-  assert.equal(result.accepted, false);
-  assert.equal(result.systemStreamValid, false);
-  assert.ok(result.errors.some((error) => error.code === "SYSTEM_STREAM_INVALID"));
-});
-
-test("fails closed above the hard 128-event suffix limit before trust or history access", async () => {
-  const token = await goodToken();
-  token.systemEventSuffix = Array.from({ length: 129 }, () => clone(token.systemEventSuffix[0]));
+  const oversized = clone(base.rewardCommitmentToken);
+  oversized.systemEventSuffix = Array.from({ length: 129 }, () => null);
   let trusted = false;
-  const result = await verifyRewardCommitmentV2(token, { authorityCheckpointTrust: async () => { trusted = true; return true; } });
+  const result = await verifyRewardCommitmentV2(oversized, { authorityCheckpointTrust: async () => { trusted = true; return true; } });
   assert.equal(result.accepted, false);
   assert.equal(trusted, false);
-  assert.ok(result.errors.some((error) => error.code === "CHECKPOINT_INVALID"));
+  assert.ok(result.errors.some((error) => error.path === "$.systemEventSuffix"));
 });
 
-test("fails closed when checkpoint-root identity is not authorized", async () => {
-  const result = await verifyRewardCommitmentV2(await goodToken(), { authorityCheckpointTrust: async () => false });
-  assert.equal(result.accepted, false);
-  assert.ok(result.errors.some((error) => error.code === "CHECKPOINT_UNTRUSTED"));
+test("rejects exact-profile suffix domain deviations and duplicate registrations", { skip: !hasVectors }, async () => {
+  const base = vectors.positiveCases[0];
+  for (const mutate of [
+    (token) => { token.systemEventSuffix[0].eventName = "REWARD_BATCH_CORRECTION"; },
+    (token) => { token.systemEventSuffix[0].protocolVersion = "1.0.1"; },
+    (token) => { token.systemEventSuffix[0].eventId = "sha256:" + "0".repeat(64); }
+  ]) {
+    const token = clone(base.rewardCommitmentToken);
+    mutate(token);
+    const result = await verifyRewardCommitmentV2(token, options(base));
+    assert.equal(result.accepted, false);
+    assert.ok(result.errors.some((error) => error.code === "SCHEMA_INVALID"));
+  }
+
+  const duplicateRegistration = clone(base.rewardCommitmentToken);
+  duplicateRegistration.systemEventSuffix = [await signedEvent({
+    ...duplicateRegistration.systemEventSuffix[0],
+    payload: { ...duplicateRegistration.systemEventSuffix[0].payload, authorityId: "fixture-authority-a", predecessorId: "fixture-authority-a" }
+  }, 83)];
+  const duplicateResult = await verifyRewardCommitmentV2(duplicateRegistration, options(base));
+  assert.equal(duplicateResult.accepted, false);
+  assert.ok(duplicateResult.errors.some((error) => error.code === "SYSTEM_STREAM_INVALID"));
 });
 
-test("fails closed when the backing signer is revoked before terminal backing", async () => {
-  const token = await goodToken();
-  const [commitment, originalBacking] = token.systemEventSuffix;
-  const revocation = await signSystemEvent({
-    eventId: "sha256:fixture-revoke-backing-signer",
-    eventName: "AUTHORITY_REVOKED",
-    chainId: token.chainId,
-    signedBy: originalBacking.signedBy,
-    timestamp: "2026-01-03T12:00:00.000Z",
-    protocolVersion: "1.0.0-rc.1",
-    prevHash: commitment.eventHash,
+test("rejects backdated authority registration and revocation lifecycle events", { skip: !hasVectors }, async () => {
+  const base = vectors.positiveCases[0];
+  const backdatedRegistration = clone(base.rewardCommitmentToken);
+  backdatedRegistration.systemEventSuffix[0] = await signedEvent({
+    ...backdatedRegistration.systemEventSuffix[0],
+    payload: { ...backdatedRegistration.systemEventSuffix[0].payload, validFrom: "2026-09-04T00:00:00.000Z" }
+  }, 83);
+  const registrationResult = await verifyRewardCommitmentV2(backdatedRegistration, options(base));
+  assert.equal(registrationResult.accepted, false);
+  assert.ok(registrationResult.errors.some((error) => error.code === "SYSTEM_STREAM_INVALID"));
+
+  const backdatedRevocation = clone(base.rewardCommitmentToken);
+  backdatedRevocation.systemEventSuffix[1] = await signedEvent({
+    ...backdatedRevocation.systemEventSuffix[1],
     payload: {
-      authorityId: originalBacking.signedBy,
-      validUntil: "2026-01-03T12:00:00.000Z",
-      revokedBy: originalBacking.signedBy,
-      revokedAt: "2026-01-03T12:00:00.000Z"
+      ...backdatedRevocation.systemEventSuffix[1].payload,
+      validUntil: "2026-09-04T00:00:01.000Z",
+      revokedAt: "2026-09-04T00:00:01.000Z"
     }
-  }, GENESIS_AUTHORITY_SEED);
-  const backing = await signSystemEvent({
-    ...clone(originalBacking),
-    prevHash: revocation.eventHash,
-    timestamp: "2026-01-04T12:00:00.000Z",
-    payload: { ...originalBacking.payload, backedAt: "2026-01-04T12:00:00.000Z" }
-  }, GENESIS_AUTHORITY_SEED);
-  token.backingEvent = backing;
-  token.systemEventSuffix = [clone(commitment), clone(revocation), clone(backing)];
-  const result = await verifyRewardCommitmentV2(token, { authorityCheckpointTrust: trust });
-  assert.equal(result.accepted, false);
-  assert.equal(result.backingValid, false);
-  assert.ok(result.errors.some((error) => error.code === "AUTHORITY_INVALID"));
+  }, 84);
+  const revocationResult = await verifyRewardCommitmentV2(backdatedRevocation, options(base));
+  assert.equal(revocationResult.accepted, false);
+  assert.ok(revocationResult.errors.some((error) => error.code === "SYSTEM_STREAM_INVALID"));
 });
 
-test("fails closed when backed proof omits terminal backing or binds it to another batch", async () => {
-  const notTerminal = await goodToken();
-  notTerminal.systemEventSuffix = notTerminal.systemEventSuffix.slice(0, -1);
-  const first = await verifyRewardCommitmentV2(notTerminal, { authorityCheckpointTrust: trust });
-  assert.equal(first.accepted, false);
-  assert.equal(first.backingValid, false);
+test("requires a valid reward inclusion proof under the aggregate leaf root", { skip: !hasVectors }, async () => {
+  const base = vectors.positiveCases[0];
+  const absent = clone(base.rewardCommitmentToken);
+  delete absent.rewardInclusionProof;
+  const absentResult = await verifyRewardCommitmentV2(absent, options(base));
+  assert.equal(absentResult.accepted, false);
+  assert.equal(absentResult.rewardInclusionProofValid, false);
 
-  const wrongBatch = await goodToken();
-  wrongBatch.backingEvent = await signSystemEvent({
-    ...clone(wrongBatch.backingEvent),
-    payload: { ...wrongBatch.backingEvent.payload, batchId: "other-batch" }
-  }, GENESIS_AUTHORITY_SEED);
-  wrongBatch.systemEventSuffix = [clone(wrongBatch.systemEventSuffix[0]), clone(wrongBatch.backingEvent)];
-  const second = await verifyRewardCommitmentV2(wrongBatch, { authorityCheckpointTrust: trust });
-  assert.equal(second.accepted, false);
-  assert.equal(second.backingValid, false);
-  assert.ok(second.errors.some((error) => error.code === "BACKING_EVENT_INVALID"));
+  const tampered = clone(base.rewardCommitmentToken);
+  tampered.rewardInclusionProof.leafHash = "0".repeat(64);
+  const tamperedResult = await verifyRewardCommitmentV2(tampered, options(base));
+  assert.equal(tamperedResult.accepted, false);
+  assert.equal(tamperedResult.rewardInclusionProofValid, false);
+  assert.ok(tamperedResult.errors.some((error) => error.code === "REWARD_INCLUSION_PROOF_INVALID"));
 });

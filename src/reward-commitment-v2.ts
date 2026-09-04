@@ -22,6 +22,13 @@ const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const CHECKPOINT_PROFILE = "configured-checkpoint-root/v1" as const;
 const CHECKPOINT_PROTOCOL_VERSION = "1.0.0-rc.1";
 const MAX_SUFFIX_EVENTS = 128;
+const CHECKPOINT_SUFFIX_EVENT_NAMES = new Set([
+  "AUTHORITY_REGISTERED",
+  "AUTHORITY_REVOKED",
+  "REWARD_BATCH_COMMITTED",
+  "REWARD_BATCH_BACKING_ATTESTED"
+]);
+const encoder = new TextEncoder();
 
 function object(value: JsonValue | undefined): { readonly [key: string]: JsonValue } | undefined {
   return value !== null && value !== undefined && typeof value === "object" && !Array.isArray(value)
@@ -61,6 +68,23 @@ function deepEqualJson(a: unknown, b: unknown): boolean {
   return aKeys.length === bKeys.length && aKeys.every((key, index) => key === bKeys[index] && deepEqualJson(aObj[key], bObj[key]));
 }
 
+function compareUtf8(a: string, b: string): number {
+  const left = encoder.encode(a);
+  const right = encoder.encode(b);
+  for (let index = 0; index < Math.min(left.length, right.length); index += 1) {
+    if (left[index] !== right[index]) return left[index] - right[index];
+  }
+  return left.length - right.length;
+}
+
+function intervalsOverlap(
+  left: AuthorityCheckpointRegistryRecordV1,
+  right: AuthorityCheckpointRegistryRecordV1
+): boolean {
+  return (right.validUntil === null || left.validFrom < right.validUntil)
+    && (left.validUntil === null || right.validFrom < left.validUntil);
+}
+
 function resultFor(): RewardCommitmentV2VerificationResult {
   return {
     format: "crinkl-reward-commitment/v2",
@@ -70,6 +94,7 @@ function resultFor(): RewardCommitmentV2VerificationResult {
     authorityValid: "not_checked",
     commitmentValid: false,
     merkleValid: false,
+    rewardInclusionProofValid: false,
     economicTier: "unknown",
     backingValid: "not_applicable",
     anchor: "not-checked",
@@ -99,6 +124,25 @@ function parseSystemEvent(input: JsonValue, path: string, result: RewardCommitme
     return undefined;
   }
   return parsed.event;
+}
+
+function parseCheckpointSuffixEvent(input: JsonValue, path: string, result: RewardCommitmentV2VerificationResult): SystemStreamEvent | undefined {
+  const event = parseSystemEvent(input, path, result);
+  if (!event) return undefined;
+  if (!CHECKPOINT_SUFFIX_EVENT_NAMES.has(event.eventName)) {
+    invalid(result, `${path}.eventName`, "Checkpoint suffix contains an unsupported eventName.");
+  }
+  if (event.protocolVersion !== CHECKPOINT_PROTOCOL_VERSION) {
+    invalid(result, `${path}.protocolVersion`, `Checkpoint suffix event protocolVersion must equal ${CHECKPOINT_PROTOCOL_VERSION}.`);
+  }
+  const eventId = `sha256:${sha256HexUtf8(canonicalizeJcs({
+    chainId: event.chainId,
+    eventName: event.eventName,
+    payload: event.payload,
+    protocolVersion: event.protocolVersion
+  }))}`;
+  if (event.eventId !== eventId) invalid(result, `${path}.eventId`, "Checkpoint suffix eventId does not match its canonical event domain.");
+  return event;
 }
 
 /** SHA-256 over the exact checkpoint authority-state commitment. */
@@ -168,6 +212,7 @@ function parseCheckpoint(
     invalid(result, "$.authorityCheckpoint.authorityState", "authorityState must contain a lowercase stateHash and non-empty records.");
   } else {
     let priorAuthorityId: string | undefined;
+    const publicKeys = new Set<string>();
     for (const [index, raw] of recordsRaw.entries()) {
       const record = object(raw);
       if (!record || !exactlyKeys(record, ["authorityId", "publicKey", "validFrom", "validUntil", "revokedBy"])) {
@@ -183,16 +228,31 @@ function parseCheckpoint(
         invalid(result, `$.authorityCheckpoint.authorityState.records[${index}]`, "authority record contains invalid authority or validity fields.");
         continue;
       }
-      if ((validUntil === null) !== (revokedBy === null) || (typeof validUntil === "string" && validUntil < validFrom)) {
+      if ((validUntil === null) !== (revokedBy === null) || (typeof validUntil === "string" && validUntil <= validFrom)) {
         invalid(result, `$.authorityCheckpoint.authorityState.records[${index}]`, "authority record revocation fields are inconsistent.");
         continue;
       }
-      if (priorAuthorityId !== undefined && authorityId <= priorAuthorityId) {
+      if (priorAuthorityId !== undefined && compareUtf8(authorityId, priorAuthorityId) <= 0) {
         invalid(result, "$.authorityCheckpoint.authorityState.records", "authority records must be strictly ordered by authorityId without duplicates.");
       }
+      if (publicKeys.has(publicKey)) invalid(result, "$.authorityCheckpoint.authorityState.records", "authority records must not reuse a public key.");
       priorAuthorityId = authorityId;
+      publicKeys.add(publicKey);
       records.push({ authorityId, publicKey, validFrom, validUntil, revokedBy });
     }
+    for (let left = 0; left < records.length; left += 1) {
+      for (let right = left + 1; right < records.length; right += 1) {
+        if (intervalsOverlap(records[left], records[right])) {
+          invalid(result, "$.authorityCheckpoint.authorityState.records", "authority records must not have overlapping validity intervals.");
+        }
+      }
+    }
+  }
+  if (checkpoint.sequence === 1 && checkpoint.previousCheckpointHash !== null) {
+    invalid(result, "$.authorityCheckpoint.previousCheckpointHash", "checkpoint sequence 1 must have previousCheckpointHash null.");
+  }
+  if (Number.isSafeInteger(checkpoint.sequence) && Number(checkpoint.sequence) > 1 && (typeof checkpoint.previousCheckpointHash !== "string" || !HASH.test(checkpoint.previousCheckpointHash))) {
+    invalid(result, "$.authorityCheckpoint.previousCheckpointHash", "checkpoint successors must name an exact previousCheckpointHash.");
   }
   const signatures = object(checkpoint.signatures);
   if (
@@ -244,9 +304,9 @@ function parseToken(input: JsonValue, result: RewardCommitmentV2VerificationResu
   if (token.economicTier !== "COMMITTED" && token.economicTier !== "COMMITTED_BACKED") invalid(result, "$.economicTier", "economicTier must be COMMITTED or COMMITTED_BACKED.");
 
   const checkpoint = parseCheckpoint(token.authorityCheckpoint as JsonValue, result);
-  const commitmentEvent = parseSystemEvent(token.commitmentEvent as JsonValue, "$.commitmentEvent", result);
+  const commitmentEvent = parseCheckpointSuffixEvent(token.commitmentEvent as JsonValue, "$.commitmentEvent", result);
   const backingPresent = owns(token, "backingEvent");
-  const backingEvent = backingPresent ? parseSystemEvent(token.backingEvent as JsonValue, "$.backingEvent", result) : undefined;
+  const backingEvent = backingPresent ? parseCheckpointSuffixEvent(token.backingEvent as JsonValue, "$.backingEvent", result) : undefined;
   if (token.economicTier === "COMMITTED_BACKED" && !backingPresent) addError(result, "BACKING_EVENT_INVALID", "economicTier is COMMITTED_BACKED but backingEvent is absent.", "input", "$.backingEvent");
   if (token.economicTier === "COMMITTED" && backingPresent) addError(result, "BACKING_EVENT_INVALID", "economicTier is COMMITTED but backingEvent is present.", "input", "$.backingEvent");
 
@@ -254,9 +314,11 @@ function parseToken(input: JsonValue, result: RewardCommitmentV2VerificationResu
   const systemEventSuffix: SystemStreamEvent[] = [];
   if (!suffixRaw || suffixRaw.length === 0) {
     invalid(result, "$.systemEventSuffix", "systemEventSuffix must be a non-empty array.");
+  } else if (suffixRaw.length > MAX_SUFFIX_EVENTS) {
+    invalid(result, "$.systemEventSuffix", "systemEventSuffix exceeds the hard limit of 128 events.");
   } else {
     suffixRaw.forEach((raw, index) => {
-      const event = parseSystemEvent(raw, `$.systemEventSuffix[${index}]`, result);
+      const event = parseCheckpointSuffixEvent(raw, `$.systemEventSuffix[${index}]`, result);
       if (event) systemEventSuffix.push(event);
     });
   }
@@ -289,13 +351,15 @@ function parseToken(input: JsonValue, result: RewardCommitmentV2VerificationResu
   if (!proof || !isNonEmptyString(proof.batchId) || !proofLeaf || !HASH.test(String(proof.leafHash)) || !siblings || !siblings.every((sibling) => typeof sibling === "string" && HASH.test(sibling))) {
     invalid(result, "$.proof", "proof must contain batchId, leaf, a lowercase SHA-256 leafHash, and sibling hashes.");
   } else if (proof.batchId !== batch?.batchId) invalid(result, "$.proof.batchId", "proof.batchId must equal batch.batchId.");
-  let rewardInclusionProof: RewardCommitmentTokenV2["rewardInclusionProof"];
-  if (owns(token, "rewardInclusionProof")) {
+  let rewardInclusionProof: RewardCommitmentTokenV2["rewardInclusionProof"] | undefined;
+  if (!owns(token, "rewardInclusionProof")) {
+    addError(result, "REWARD_INCLUSION_PROOF_INVALID", "Reward Commitment Token V2 requires rewardInclusionProof.", "input", "$.rewardInclusionProof");
+  } else {
     const rip = object(token.rewardInclusionProof as JsonValue);
     const ripLeaf = rip ? object(rip.leaf as JsonValue) : undefined;
     const ripSiblings = rip ? array(rip.siblings as JsonValue) : undefined;
     if (!rip || !isNonEmptyString(rip.batchId) || !isNonEmptyString(rip.recipientId) || !HASH.test(String(rip.rewardEventsRoot)) || !ripLeaf || !exactlyKeys(ripLeaf, ["spendId", "rewardEventHash"]) || !isNonEmptyString(ripLeaf.spendId) || !HASH.test(String(ripLeaf.rewardEventHash)) || !HASH.test(String(rip.leafHash)) || !ripSiblings || !ripSiblings.every((sibling) => typeof sibling === "string" && HASH.test(sibling))) {
-      invalid(result, "$.rewardInclusionProof", "rewardInclusionProof is malformed.");
+      addError(result, "REWARD_INCLUSION_PROOF_INVALID", "rewardInclusionProof is malformed.", "input", "$.rewardInclusionProof");
     } else {
       rewardInclusionProof = { batchId: rip.batchId as string, recipientId: rip.recipientId as string, rewardEventsRoot: rip.rewardEventsRoot as string, leaf: { spendId: ripLeaf.spendId as string, rewardEventHash: ripLeaf.rewardEventHash as string }, leafHash: rip.leafHash as string, siblings: ripSiblings as string[] };
     }
@@ -305,7 +369,7 @@ function parseToken(input: JsonValue, result: RewardCommitmentV2VerificationResu
     tokenType: "REWARD_COMMITMENT", schemaVersion: 2, evidenceProfile: CHECKPOINT_PROFILE, chainId: token.chainId,
     economicTier: token.economicTier as "COMMITTED" | "COMMITTED_BACKED", authorityCheckpoint: checkpoint, systemEventSuffix,
     commitmentEvent, backingEvent, batch: batch as unknown as RewardCommitmentTokenV2["batch"], recipientId: token.recipientId as string,
-    leaf, proof: { batchId: proof.batchId as string, leaf: proofLeaf, leafHash: proof.leafHash as string, siblings: siblings as string[] }, rewardInclusionProof
+    leaf, proof: { batchId: proof.batchId as string, leaf: proofLeaf, leafHash: proof.leafHash as string, siblings: siblings as string[] }, rewardInclusionProof: rewardInclusionProof!
   };
 }
 
@@ -512,6 +576,27 @@ export async function verifyRewardCommitmentV2(input: unknown, options: RewardCo
   result.merkleValid = merkle.valid;
   if (!merkle.valid) addError(result, "MERKLE_PROOF_INVALID", merkle.leafHashMismatch ? "Recomputed leaf hash does not match proof.leafHash." : "The Merkle inclusion proof does not resolve to batch.root.", "crypto", "$.proof");
 
+  const rewardEventsRoot = token.leaf.rewardEventsRoot;
+  const rewardInclusion = token.rewardInclusionProof;
+  let rewardInclusionCryptographicallyValid = false;
+  try {
+    rewardInclusionCryptographicallyValid = verifyInclusionProof({
+      leaf: rewardInclusion!.leaf,
+      leafHash: rewardInclusion!.leafHash,
+      siblings: rewardInclusion!.siblings,
+      expectedRoot: rewardEventsRoot as string
+    }).valid;
+  } catch {
+    rewardInclusionCryptographicallyValid = false;
+  }
+  const rewardInclusionBindingValid = rewardInclusion!.batchId === token.batch.batchId
+    && rewardInclusion!.recipientId === token.recipientId
+    && rewardInclusion!.rewardEventsRoot === rewardEventsRoot;
+  result.rewardInclusionProofValid = rewardInclusionCryptographicallyValid && rewardInclusionBindingValid;
+  if (!result.rewardInclusionProofValid) {
+    addError(result, "REWARD_INCLUSION_PROOF_INVALID", "rewardInclusionProof must bind this recipient and batch and verify against leaf.rewardEventsRoot.", rewardInclusionCryptographicallyValid ? "input" : "crypto", "$.rewardInclusionProof");
+  }
+
   result.economicTier = token.economicTier;
   if (token.economicTier === "COMMITTED_BACKED") {
     const backingIncluded = Boolean(token.backingEvent && replay.ordered.some((event) => deepEqualJson(event, token.backingEvent)));
@@ -527,6 +612,6 @@ export async function verifyRewardCommitmentV2(input: unknown, options: RewardCo
   }
 
   await applyChainEvidence(result, token, options);
-  result.accepted = result.checkpointValid && result.systemStreamValid && result.authorityValid === true && result.commitmentValid && result.merkleValid && (result.economicTier !== "COMMITTED_BACKED" || result.backingValid === true) && ((options.chainEvidence?.mode ?? "none") === "none" || result.anchor === "verified");
+  result.accepted = result.checkpointValid && result.systemStreamValid && result.authorityValid === true && result.commitmentValid && result.merkleValid && result.rewardInclusionProofValid && (result.economicTier !== "COMMITTED_BACKED" || result.backingValid === true) && ((options.chainEvidence?.mode ?? "none") === "none" || result.anchor === "verified");
   return result;
 }
