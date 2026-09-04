@@ -19,7 +19,6 @@ import type {
 const AMOUNT = /^(0|[1-9][0-9]*)$/;
 const HASH = /^[0-9a-f]{64}$/;
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
-const CLOSED_SCHEMA_VERSIONS = ["1a", "1b", "2a", "2b"] as const;
 const CHECKPOINT_PROFILE = "configured-checkpoint-root/v1" as const;
 const CHECKPOINT_PROTOCOL_VERSION = "1.0.0-rc.1";
 const MAX_SUFFIX_EVENTS = 128;
@@ -267,11 +266,11 @@ function parseToken(input: JsonValue, result: RewardCommitmentV2VerificationResu
     invalid(result, "$.batch", "batch must contain valid batchId, root, schemaVersion, txRef, and committedAt fields.");
   }
   const batchSchema = typeof batch?.schemaVersion === "string" ? batch.schemaVersion : undefined;
-  if (batchSchema !== undefined && !CLOSED_SCHEMA_VERSIONS.includes(batchSchema as (typeof CLOSED_SCHEMA_VERSIONS)[number])) addError(result, "UNKNOWN_SCHEMA_VERSION", `Unknown reward-batch leaf schemaVersion "${batchSchema}".`, "policy", "$.batch.schemaVersion");
+  if (batchSchema !== "2a" && batchSchema !== "2b") addError(result, "UNKNOWN_SCHEMA_VERSION", "Reward Commitment Token V2 requires reward-batch schemaVersion 2a or 2b.", "policy", "$.batch.schemaVersion");
   if (!isNonEmptyString(token.recipientId)) invalid(result, "$.recipientId", "recipientId must be a non-empty string.");
   const leaf = object(token.leaf as JsonValue);
   if (!leaf) invalid(result, "$.leaf", "leaf must be a JSON object.");
-  else if (batchSchema && CLOSED_SCHEMA_VERSIONS.includes(batchSchema as (typeof CLOSED_SCHEMA_VERSIONS)[number])) {
+  else if (batchSchema === "2a" || batchSchema === "2b") {
     const blinded = batchSchema.endsWith("b");
     const linkable = batchSchema.startsWith("2");
     const expectedLeafKeys = linkable ? ["batchId", "recipientId", "totalPoints", "rewardEventsRoot"] : ["batchId", "recipientId", "totalPoints"];
@@ -492,19 +491,22 @@ export async function verifyRewardCommitmentV2(input: unknown, options: RewardCo
   result.systemStreamValid = replay.integrityValid && !replayRejected;
   for (const error of replay.errors) addError(result, error.code, error.message, error.cause, error.path);
 
-  const commitmentIncluded = replay.ordered.some((event) => deepEqualJson(event, token.commitmentEvent));
+  const commitmentIndex = replay.ordered.findIndex((event) => deepEqualJson(event, token.commitmentEvent));
+  const commitmentIncluded = commitmentIndex >= 0;
   const commitmentSignatureValid = replay.eventSignatureValid.get(token.commitmentEvent.eventHash) === true;
   const commitmentNameValid = token.commitmentEvent.eventName === "REWARD_BATCH_COMMITTED";
   const batchMatches = deepEqualJson(token.batch, token.commitmentEvent.payload);
   const terminal = replay.ordered.at(-1);
-  const commitmentTerminal = deepEqualJson(terminal, token.commitmentEvent);
+  const commitmentTerminal = token.economicTier === "COMMITTED" && deepEqualJson(terminal, token.commitmentEvent);
+  const commitmentBeforeTerminal = token.economicTier === "COMMITTED_BACKED" && commitmentIndex >= 0 && commitmentIndex < replay.ordered.length - 1;
   result.authorityValid = commitmentSignatureValid && !replayRejected;
-  result.commitmentValid = commitmentIncluded && commitmentSignatureValid && commitmentNameValid && batchMatches && commitmentTerminal;
+  result.commitmentValid = commitmentIncluded && commitmentSignatureValid && commitmentNameValid && batchMatches && (commitmentTerminal || commitmentBeforeTerminal);
   if (!commitmentIncluded) addError(result, "COMMITMENT_EVENT_INVALID", "commitmentEvent is not present in systemEventSuffix.", "input", "$.commitmentEvent");
   if (!commitmentSignatureValid) addError(result, "COMMITMENT_EVENT_INVALID", "commitmentEvent signature or authority validation failed.", "crypto", "$.commitmentEvent");
   if (!commitmentNameValid) addError(result, "COMMITMENT_EVENT_INVALID", "commitmentEvent.eventName must be REWARD_BATCH_COMMITTED.", "input", "$.commitmentEvent.eventName");
   if (!batchMatches) addError(result, "COMMITMENT_EVENT_INVALID", "batch does not equal commitmentEvent.payload.", "input", "$.batch");
-  if (!commitmentTerminal) addError(result, "COMMITMENT_EVENT_INVALID", "commitmentEvent must be the terminal event of systemEventSuffix.", "input", "$.systemEventSuffix");
+  if (token.economicTier === "COMMITTED" && !commitmentTerminal) addError(result, "COMMITMENT_EVENT_INVALID", "COMMITTED commitmentEvent must be the terminal event of systemEventSuffix.", "input", "$.systemEventSuffix");
+  if (token.economicTier === "COMMITTED_BACKED" && !commitmentBeforeTerminal) addError(result, "COMMITMENT_EVENT_INVALID", "COMMITTED_BACKED commitmentEvent must precede terminal backingEvent in systemEventSuffix.", "input", "$.systemEventSuffix");
 
   const merkle = verifyInclusionProof({ leaf: token.leaf, leafHash: token.proof.leafHash, siblings: token.proof.siblings, expectedRoot: token.batch.root });
   result.merkleValid = merkle.valid;
@@ -516,9 +518,12 @@ export async function verifyRewardCommitmentV2(input: unknown, options: RewardCo
     const backingName = token.backingEvent?.eventName === "REWARD_BATCH_BACKING_ATTESTED";
     const backingPayload = token.backingEvent?.payload;
     const backingBatch = backingPayload?.batchId === token.batch.batchId;
+    const backingChain = token.backingEvent?.chainId === token.chainId;
     const backingSignature = Boolean(token.backingEvent && replay.eventSignatureValid.get(token.backingEvent.eventHash) === true);
-    result.backingValid = backingIncluded && backingName && backingBatch && backingSignature;
-    if (!result.backingValid) addError(result, "BACKING_EVENT_INVALID", "backingEvent is absent, invalid, not signed by a valid authority, or not included in systemEventSuffix.", "crypto", "$.backingEvent");
+    const backingTerminal = Boolean(token.backingEvent && deepEqualJson(terminal, token.backingEvent));
+    const commitmentBeforeBacking = commitmentBeforeTerminal;
+    result.backingValid = backingIncluded && backingName && backingBatch && backingChain && backingSignature && backingTerminal && commitmentBeforeBacking;
+    if (!result.backingValid) addError(result, "BACKING_EVENT_INVALID", "COMMITTED_BACKED requires a same-chain, same-batch backingEvent signed by a valid authority after commitmentEvent and terminal in systemEventSuffix.", "crypto", "$.backingEvent");
   }
 
   await applyChainEvidence(result, token, options);

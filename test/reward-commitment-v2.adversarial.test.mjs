@@ -17,9 +17,9 @@ const encoder = new TextEncoder();
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const seed = (label) => sha256(encoder.encode(`crinkl-verify-test-seed:${label}`));
 const ROOT_SEED = seed("authority-checkpoint-root");
-const ROTATED_AUTHORITY_SEED = seed("reward-commitment-authority-rotated");
+const GENESIS_AUTHORITY_SEED = seed("reward-commitment-authority-genesis");
 const fixture = JSON.parse(readFileSync(new URL("../fixtures/reward-commitment-v1.json", import.meta.url)));
-const case1a = fixture.cases.find((candidate) => candidate.id === "rewardCommitment.v1.committed.1a");
+const case2a = fixture.cases.find((candidate) => candidate.id === "rewardCommitment.v1.committedBacked.2a");
 
 async function rootPublicKey() {
   return Buffer.from(await ed25519.getPublicKeyAsync(ROOT_SEED)).toString("base64");
@@ -49,14 +49,14 @@ async function signSystemEvent(event, signingSeed) {
 }
 
 async function goodToken() {
-  const [genesis, ...suffix] = clone(case1a.token.systemEvents);
+  const [genesis, ...suffix] = clone(case2a.token.systemEvents);
   const records = [{ authorityId: genesis.payload.authorityId, publicKey: genesis.payload.publicKey, validFrom: genesis.payload.validFrom, validUntil: null, revokedBy: null }];
   const checkpoint = await signCheckpoint({
     checkpointType: "AUTHORITY_CHECKPOINT",
     schemaVersion: 1,
     protocol: { protocolVersion: "1.0.0-rc.1" },
     evidenceProfile: "configured-checkpoint-root/v1",
-    chainId: case1a.token.chainId,
+    chainId: case2a.token.chainId,
     sequence: 3,
     covered: { streamHeight: 1, headEventHash: genesis.eventHash, effectiveAt: genesis.timestamp },
     authorityState: { stateHash: "0".repeat(64), records },
@@ -65,9 +65,9 @@ async function goodToken() {
     signatures: { issuedBy: "crinkl-checkpoint-root", keyId: "checkpoint-root-test-v1", publicKey: await rootPublicKey(), checkpointHash: "0".repeat(64), signature: "pending" }
   });
   return {
-    tokenType: "REWARD_COMMITMENT", schemaVersion: 2, evidenceProfile: "configured-checkpoint-root/v1", chainId: case1a.token.chainId,
-    economicTier: "COMMITTED", commitmentEvent: clone(case1a.token.commitmentEvent), authorityCheckpoint: checkpoint,
-    systemEventSuffix: suffix, batch: clone(case1a.token.batch), recipientId: case1a.token.recipientId, leaf: clone(case1a.token.leaf), proof: clone(case1a.token.proof)
+    tokenType: "REWARD_COMMITMENT", schemaVersion: 2, evidenceProfile: "configured-checkpoint-root/v1", chainId: case2a.token.chainId,
+    economicTier: "COMMITTED_BACKED", commitmentEvent: clone(case2a.token.commitmentEvent), backingEvent: clone(case2a.token.backingEvent), authorityCheckpoint: checkpoint,
+    systemEventSuffix: suffix, batch: clone(case2a.token.batch), recipientId: case2a.token.recipientId, leaf: clone(case2a.token.leaf), proof: clone(case2a.token.proof), rewardInclusionProof: clone(case2a.token.rewardInclusionProof)
   };
 }
 
@@ -118,28 +118,53 @@ test("fails closed when checkpoint-root identity is not authorized", async () =>
   assert.ok(result.errors.some((error) => error.code === "CHECKPOINT_UNTRUSTED"));
 });
 
-test("fails closed when a rotated authority is revoked before the terminal commitment", async () => {
+test("fails closed when the backing signer is revoked before terminal backing", async () => {
   const token = await goodToken();
-  const [rotation, originalRevocation] = token.systemEventSuffix;
-  const revokedRotation = await signSystemEvent({
-    ...clone(originalRevocation),
-    prevHash: rotation.eventHash,
+  const [commitment, originalBacking] = token.systemEventSuffix;
+  const revocation = await signSystemEvent({
+    eventId: "sha256:fixture-revoke-backing-signer",
+    eventName: "AUTHORITY_REVOKED",
+    chainId: token.chainId,
+    signedBy: originalBacking.signedBy,
     timestamp: "2026-01-03T12:00:00.000Z",
+    protocolVersion: "1.0.0-rc.1",
+    prevHash: commitment.eventHash,
     payload: {
-      ...clone(originalRevocation.payload),
-      authorityId: rotation.payload.authorityId,
+      authorityId: originalBacking.signedBy,
       validUntil: "2026-01-03T12:00:00.000Z",
-      revokedBy: rotation.payload.authorityId
+      revokedBy: originalBacking.signedBy,
+      revokedAt: "2026-01-03T12:00:00.000Z"
     }
-  }, ROTATED_AUTHORITY_SEED);
-  const commitment = await signSystemEvent({
-    ...clone(token.commitmentEvent),
-    prevHash: revokedRotation.eventHash
-  }, ROTATED_AUTHORITY_SEED);
-  token.commitmentEvent = commitment;
-  token.systemEventSuffix = [clone(rotation), clone(revokedRotation), clone(commitment)];
+  }, GENESIS_AUTHORITY_SEED);
+  const backing = await signSystemEvent({
+    ...clone(originalBacking),
+    prevHash: revocation.eventHash,
+    timestamp: "2026-01-04T12:00:00.000Z",
+    payload: { ...originalBacking.payload, backedAt: "2026-01-04T12:00:00.000Z" }
+  }, GENESIS_AUTHORITY_SEED);
+  token.backingEvent = backing;
+  token.systemEventSuffix = [clone(commitment), clone(revocation), clone(backing)];
   const result = await verifyRewardCommitmentV2(token, { authorityCheckpointTrust: trust });
   assert.equal(result.accepted, false);
-  assert.equal(result.authorityValid, false);
+  assert.equal(result.backingValid, false);
   assert.ok(result.errors.some((error) => error.code === "AUTHORITY_INVALID"));
+});
+
+test("fails closed when backed proof omits terminal backing or binds it to another batch", async () => {
+  const notTerminal = await goodToken();
+  notTerminal.systemEventSuffix = notTerminal.systemEventSuffix.slice(0, -1);
+  const first = await verifyRewardCommitmentV2(notTerminal, { authorityCheckpointTrust: trust });
+  assert.equal(first.accepted, false);
+  assert.equal(first.backingValid, false);
+
+  const wrongBatch = await goodToken();
+  wrongBatch.backingEvent = await signSystemEvent({
+    ...clone(wrongBatch.backingEvent),
+    payload: { ...wrongBatch.backingEvent.payload, batchId: "other-batch" }
+  }, GENESIS_AUTHORITY_SEED);
+  wrongBatch.systemEventSuffix = [clone(wrongBatch.systemEventSuffix[0]), clone(wrongBatch.backingEvent)];
+  const second = await verifyRewardCommitmentV2(wrongBatch, { authorityCheckpointTrust: trust });
+  assert.equal(second.accepted, false);
+  assert.equal(second.backingValid, false);
+  assert.ok(second.errors.some((error) => error.code === "BACKING_EVENT_INVALID"));
 });
