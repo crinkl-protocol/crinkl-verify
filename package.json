@@ -1,6 +1,6 @@
 {
   "name": "@crinkl/verify",
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0-alpha.5",
   "description": "Verify Crinkl spend attestation tokens and reward commitments locally, with optional caller-directed chain RPC evidence.",
   "type": "module",
   "exports": {

@@ -4,7 +4,7 @@ Verify Crinkl Spend Attestation Tokens and Reward Commitment Tokens locally,
 without accounts. Verification is offline by default; only an explicitly
 configured reward-chain RPC evidence mode uses the network.
 
-The `0.1.0-alpha.2` candidate verifies the released native `SpendAttestationTokenV1`
+The `0.1.0-alpha.5` candidate verifies the released native `SpendAttestationTokenV1`
 profile, the released `SpendAttestationTokenV2` holder-binding profile, and the
 `RewardCommitmentTokenV1` profile offline. It also composes native Spend Token
 and reward-commitment verification into tiered spend + reward-commitment
@@ -17,7 +17,7 @@ issuer-key history, and status/refresh rules.
 ## Install
 
 ```bash
-npm install @crinkl/verify@0.1.0-alpha.2
+npm install @crinkl/verify@0.1.0-alpha.5
 ```
 
 ## Browser compatibility
@@ -43,7 +43,7 @@ These identifiers describe different layers and are not interchangeable:
 
 | Surface | Supported or published value |
 |---|---|
-| npm package candidate | `@crinkl/verify@0.1.0-alpha.2` (not published) |
+| npm package candidate | `@crinkl/verify@0.1.0-alpha.5` (not published) |
 | Native Spend Attestation Token schema | `schemaVersion: 1` and `schemaVersion: 2` |
 | Default embedded Spend Token protocol object version | `protocolVersion: "1.0.0-rc.1"` |
 | Latest immutable public specification release | `v1.0.0-rc.7` |
@@ -206,6 +206,16 @@ Reward Commitment verification result. Non-linkable `1a`/`1b` batches retain
 `committed`/`committed-backed`, that the issuer attached and anchored an
 economic (reward) liability to it. It does not prove the underlying purchase
 occurred.**
+
+### Checkpoint-backed Reward Commitment V2
+
+`verifyRewardCommitmentV2` verifies a bounded System Stream suffix from a
+caller-authorized `AuthorityCheckpointV1`; it does not fetch or replay the
+full history. The suffix accepts the authority, commitment, backing,
+`REWARD_BATCH_CORRECTION`, and `CUMULATIVE_SNAPSHOT_COMMITTED` event shapes
+defined by the configured checkpoint profile. Corrections and snapshots are
+authenticated continuity evidence only: they do not replace the token's
+terminal commitment/backing evidence or alter its economic tier.
 
 ## Scope
 

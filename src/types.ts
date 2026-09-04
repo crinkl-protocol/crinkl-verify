@@ -285,11 +285,13 @@ export interface ZkCommitments {
  * System-stream event envelope (EVENTS.md#system-stream-event-envelope /
  * DATA_STRUCTURES.md#integrity-envelope). `payload` is left as opaque JSON;
  * this package interprets the payload only for the specific event names it
- * verifies (REWARD_BATCH_COMMITTED, REWARD_BATCH_BACKING_ATTESTED,
- * AUTHORITY_REGISTERED, AUTHORITY_REVOKED). Unknown event names are carried
- * with a validated envelope but an unread payload, consistent with tolerating
- * version skew rather than rejecting a segment for containing events this
- * package does not need to interpret.
+ * verifies. V1 replays `REWARD_BATCH_COMMITTED`,
+ * `REWARD_BATCH_BACKING_ATTESTED`, `AUTHORITY_REGISTERED`, and
+ * `AUTHORITY_REVOKED`. The checkpoint-backed V2 suffix additionally accepts
+ * exact `REWARD_BATCH_CORRECTION` and `CUMULATIVE_SNAPSHOT_COMMITTED` payloads
+ * as authenticated continuity evidence; neither changes the terminal
+ * commitment or economic tier. Unknown event names remain unread outside the
+ * exact verifier path that requires them.
  */
 export interface SystemStreamEvent {
   eventId: string;
