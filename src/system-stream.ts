@@ -164,6 +164,40 @@ function authorityValidAt(record: AuthorityRecordState, atTime: string): boolean
   return record.validFrom <= atTime && (record.validUntil === null || atTime < record.validUntil);
 }
 
+const CHECKPOINT_SUFFIX_EVENT_NAMES = new Set([
+  "AUTHORITY_REGISTERED",
+  "AUTHORITY_REVOKED",
+  "REWARD_BATCH_COMMITTED",
+  "REWARD_BATCH_BACKING_ATTESTED"
+]);
+const CHECKPOINT_PROTOCOL_VERSION = "1.0.0-rc.1";
+
+function exactlyKeys(value: { readonly [key: string]: JsonValue }, keys: readonly string[]): boolean {
+  return Object.keys(value).length === keys.length && keys.every((key) => Object.prototype.hasOwnProperty.call(value, key));
+}
+
+function isTimestamp(value: unknown): value is string {
+  return typeof value === "string" && TIMESTAMP.test(value);
+}
+
+function isEd25519PublicKey(value: unknown): value is string {
+  const bytes = typeof value === "string" ? base64ToBytes(value) : undefined;
+  return bytes !== undefined && bytes.length === 32;
+}
+
+function validateCheckpointSuffixEvent(event: SystemStreamEvent): string | undefined {
+  if (!CHECKPOINT_SUFFIX_EVENT_NAMES.has(event.eventName)) return `Checkpoint suffix eventName "${event.eventName}" is unsupported.`;
+  if (event.protocolVersion !== CHECKPOINT_PROTOCOL_VERSION) return `Checkpoint suffix event protocolVersion must equal ${CHECKPOINT_PROTOCOL_VERSION}.`;
+  const expectedEventId = `sha256:${sha256HexUtf8(canonicalizeJcs({
+    chainId: event.chainId,
+    eventName: event.eventName,
+    payload: event.payload,
+    protocolVersion: event.protocolVersion
+  }))}`;
+  if (event.eventId !== expectedEventId) return "Checkpoint suffix eventId does not match its canonical event domain.";
+  return undefined;
+}
+
 /**
  * Replays a system-stream segment: reconstructs canonical order, verifies
  * integrity (`eventHash` + `prevHash` chaining), and — only when the segment
@@ -337,6 +371,12 @@ export async function replaySystemStreamSuffix(
   if (!integrityValid) return { ordered, integrityValid, fork, gap, registry, eventSignatureValid, errors };
 
   for (const event of ordered) {
+    const shapeError = validateCheckpointSuffixEvent(event);
+    if (shapeError) {
+      eventSignatureValid.set(event.eventHash, false);
+      errors.push({ code: "SYSTEM_STREAM_INVALID", message: shapeError, cause: "input", path: "$.systemEventSuffix" });
+      continue;
+    }
     const signer = registry.get(event.signedBy);
     const at = effectiveTime(event);
     if (!signer || !authorityValidAt(signer, at)) {
@@ -354,22 +394,37 @@ export async function replaySystemStreamSuffix(
       const authorityId = event.payload.authorityId;
       const publicKey = event.payload.publicKey;
       const validFrom = event.payload.validFrom;
-      if (typeof authorityId === "string" && typeof publicKey === "string" && typeof validFrom === "string") {
+      const predecessorId = event.payload.predecessorId;
+      const registeredAt = event.payload.registeredAt;
+      if (
+        exactlyKeys(event.payload, ["authorityId", "publicKey", "validFrom", "predecessorId", "txRef", "registeredAt"])
+        && isNonEmptyString(authorityId) && isEd25519PublicKey(publicKey) && isTimestamp(validFrom)
+        && isNonEmptyString(predecessorId) && predecessorId === event.signedBy && registry.has(predecessorId)
+        && isNonEmptyString(event.payload.txRef) && isTimestamp(registeredAt)
+        && validFrom >= registeredAt
+        && !registry.has(authorityId)
+      ) {
         registry.set(authorityId, { publicKeyBase64: publicKey, chainId, validFrom, validUntil: null });
       } else {
-        errors.push({ code: "SYSTEM_STREAM_INVALID", message: `AUTHORITY_REGISTERED payload is malformed for eventId ${event.eventId}.`, cause: "input", path: "$.systemEventSuffix" });
+        errors.push({ code: "SYSTEM_STREAM_INVALID", message: `AUTHORITY_REGISTERED payload is malformed, does not name its valid signing predecessor, or attempts a duplicate registration for eventId ${event.eventId}.`, cause: "input", path: "$.systemEventSuffix" });
       }
     } else if (event.eventName === "AUTHORITY_REVOKED") {
       const authorityId = event.payload.authorityId;
       const validUntil = event.payload.validUntil;
       const revokedBy = event.payload.revokedBy;
-      if (typeof authorityId !== "string" || typeof validUntil !== "string" || typeof revokedBy !== "string" || revokedBy !== event.signedBy) {
-        errors.push({ code: "SYSTEM_STREAM_INVALID", message: `AUTHORITY_REVOKED payload is malformed or revokedBy does not match signedBy for eventId ${event.eventId}.`, cause: "input", path: "$.systemEventSuffix" });
+      const revokedAt = event.payload.revokedAt;
+      if (
+        !exactlyKeys(event.payload, ["authorityId", "validUntil", "revokedBy", "reason", "txRef", "revokedAt"])
+        || !isNonEmptyString(authorityId) || !isTimestamp(validUntil) || !isNonEmptyString(revokedBy)
+        || revokedBy !== event.signedBy || !isNonEmptyString(event.payload.reason) || !isNonEmptyString(event.payload.txRef)
+        || !isTimestamp(revokedAt) || validUntil !== revokedAt || revokedAt < event.timestamp
+      ) {
+        errors.push({ code: "SYSTEM_STREAM_INVALID", message: `AUTHORITY_REVOKED payload is malformed, retroactive, or revokedBy does not match signedBy for eventId ${event.eventId}.`, cause: "input", path: "$.systemEventSuffix" });
         continue;
       }
       const target = registry.get(authorityId);
-      if (!target) {
-        errors.push({ code: "SYSTEM_STREAM_INVALID", message: `AUTHORITY_REVOKED references an unknown authorityId "${authorityId}".`, cause: "input", path: "$.systemEventSuffix" });
+      if (!target || target.validUntil !== null || validUntil <= target.validFrom) {
+        errors.push({ code: "SYSTEM_STREAM_INVALID", message: `AUTHORITY_REVOKED references an unknown, already revoked, or not-yet-valid authorityId "${authorityId}".`, cause: "input", path: "$.systemEventSuffix" });
         continue;
       }
       target.validUntil = validUntil;

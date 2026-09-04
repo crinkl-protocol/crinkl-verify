@@ -13,6 +13,7 @@ export {
 } from "./reward-commitment-v2.js";
 export { PLATFORM_SOLANA_CREATE_BATCH_IMPRINT_V1, verifySolanaBatchAnchor } from "./solana.js";
 export { verifySpendWithRewardCommitment } from "./spend-reward-commitment.js";
+export { verifySpendRewardCommitmentV2 } from "./spend-reward-commitment-v2.js";
 export { EMPTY_LEAF_HASH_HEX, combineSorted, computeLeafHash, verifyInclusionProof } from "./merkle.js";
 export { computeSystemEventHash } from "./system-stream.js";
 export type * from "./types.js";
