@@ -50,6 +50,24 @@ test("consumes every Protocol AuthorityCheckpointV1 positive vector", { skip: !h
   }
 });
 
+test("accepts the exact V2 correction and snapshot shape without changing the terminal commitment tier", { skip: !hasAuthorityCheckpointVectors }, async () => {
+  const vectorCase = authorityCheckpointVectors.positiveCases.find(
+    (candidate) => candidate.id === "valid-checkpoint-correction-and-snapshot-suffix"
+  );
+  assert.ok(vectorCase, "Protocol vectors must provide the V2 correction/snapshot suffix case.");
+  const token = vectorCase.rewardCommitmentToken;
+  assert.deepEqual(
+    token.systemEventSuffix.map((event) => event.eventName),
+    ["AUTHORITY_REGISTERED", "AUTHORITY_REVOKED", "REWARD_BATCH_CORRECTION", "CUMULATIVE_SNAPSHOT_COMMITTED", "REWARD_BATCH_COMMITTED"]
+  );
+
+  const result = await verifyRewardCommitmentV2(token, checkpointOptions(vectorCase));
+  assert.equal(result.accepted, true);
+  assert.equal(result.systemStreamValid, true);
+  assert.equal(result.commitmentValid, true);
+  assert.equal(result.backingValid, "not_applicable");
+});
+
 test("rejects every hostile Protocol AuthorityCheckpointV1 vector", { skip: !hasAuthorityCheckpointVectors }, async () => {
   for (const hostile of authorityCheckpointVectors.negativeCases) {
     const result = await verifyRewardCommitmentV2(hostile.case.rewardCommitmentToken, checkpointOptions(hostile.case));

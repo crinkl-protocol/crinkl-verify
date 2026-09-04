@@ -7,6 +7,7 @@ import { sha256 } from "@noble/hashes/sha256";
 import { sha512 } from "@noble/hashes/sha512";
 import { canonicalize } from "json-canonicalize";
 import { verifyRewardCommitmentV2 } from "../dist/index.js";
+import { validateCheckpointSuffixEvent } from "../dist/system-stream.js";
 
 if (!ed25519.etc.sha512Sync) ed25519.etc.sha512Sync = (...messages) => sha512(ed25519.etc.concatBytes(...messages));
 
@@ -134,6 +135,52 @@ test("rejects exact-profile suffix domain deviations and duplicate registrations
   const duplicateResult = await verifyRewardCommitmentV2(duplicateRegistration, options(base));
   assert.equal(duplicateResult.accepted, false);
   assert.ok(duplicateResult.errors.some((error) => error.code === "SYSTEM_STREAM_INVALID"));
+});
+
+test("accepts exact correction/snapshot payloads and rejects malformed or signature-tampered continuity evidence", { skip: !hasVectors }, async () => {
+  const continuityCase = vectors.positiveCases.find(
+    (candidate) => candidate.id === "valid-checkpoint-correction-and-snapshot-suffix"
+  );
+  assert.ok(continuityCase, "Protocol vectors must provide the V2 correction/snapshot suffix case.");
+  const correction = continuityCase.rewardCommitmentToken.systemEventSuffix.find(
+    (event) => event.eventName === "REWARD_BATCH_CORRECTION"
+  );
+  const snapshot = continuityCase.rewardCommitmentToken.systemEventSuffix.find(
+    (event) => event.eventName === "CUMULATIVE_SNAPSHOT_COMMITTED"
+  );
+  assert.ok(correction && snapshot);
+  assert.equal(validateCheckpointSuffixEvent(correction), undefined);
+  assert.equal(validateCheckpointSuffixEvent(snapshot), undefined);
+
+  const malformedCorrection = clone(correction);
+  delete malformedCorrection.payload.reason;
+  const signedMalformedCorrection = await signedEvent(malformedCorrection, 84);
+  assert.match(validateCheckpointSuffixEvent(signedMalformedCorrection), /REWARD_BATCH_CORRECTION payload is malformed/);
+  const malformedSnapshot = clone(snapshot);
+  delete malformedSnapshot.payload.throughEventHash;
+  const signedMalformedSnapshot = await signedEvent(malformedSnapshot, 84);
+  assert.match(validateCheckpointSuffixEvent(signedMalformedSnapshot), /CUMULATIVE_SNAPSHOT_COMMITTED payload is malformed/);
+
+  for (const [eventName, malformedEvent] of [
+    ["REWARD_BATCH_CORRECTION", signedMalformedCorrection],
+    ["CUMULATIVE_SNAPSHOT_COMMITTED", signedMalformedSnapshot]
+  ]) {
+    const token = clone(continuityCase.rewardCommitmentToken);
+    const index = token.systemEventSuffix.findIndex((candidate) => candidate.eventName === eventName);
+    token.systemEventSuffix[index] = malformedEvent;
+    const result = await verifyRewardCommitmentV2(token, options(continuityCase));
+    assert.equal(result.accepted, false, eventName);
+    assert.ok(result.errors.some((error) => error.code === "SCHEMA_INVALID"), eventName);
+  }
+
+  for (const eventName of ["REWARD_BATCH_CORRECTION", "CUMULATIVE_SNAPSHOT_COMMITTED"]) {
+    const token = clone(continuityCase.rewardCommitmentToken);
+    const event = token.systemEventSuffix.find((candidate) => candidate.eventName === eventName);
+    event.signature = `${event.signature.startsWith("A") ? "B" : "A"}${event.signature.slice(1)}`;
+    const result = await verifyRewardCommitmentV2(token, options(continuityCase));
+    assert.equal(result.accepted, false, eventName);
+    assert.ok(result.errors.some((error) => error.code === "AUTHORITY_INVALID"), eventName);
+  }
 });
 
 test("rejects backdated authority registration and revocation lifecycle events", { skip: !hasVectors }, async () => {

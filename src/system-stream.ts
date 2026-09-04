@@ -198,7 +198,9 @@ const CHECKPOINT_SUFFIX_EVENT_NAMES = new Set([
   "AUTHORITY_REGISTERED",
   "AUTHORITY_REVOKED",
   "REWARD_BATCH_COMMITTED",
-  "REWARD_BATCH_BACKING_ATTESTED"
+  "REWARD_BATCH_BACKING_ATTESTED",
+  "REWARD_BATCH_CORRECTION",
+  "CUMULATIVE_SNAPSHOT_COMMITTED"
 ]);
 const CHECKPOINT_PROTOCOL_VERSION = "1.0.0-rc.1";
 
@@ -248,6 +250,37 @@ function validBackingPayload(payload: { readonly [key: string]: JsonValue }): bo
     && isRfc3339UtcMillisecond(payload.backedAt);
 }
 
+function validCorrectionPayload(payload: { readonly [key: string]: JsonValue }): boolean {
+  if (!exactlyKeys(payload, ["correctionBatchId", "targetBatchId", "reason", "adjustments", "root", "txRef", "committedAt"])
+    || !isNonEmptyString(payload.correctionBatchId)
+    || !isNonEmptyString(payload.targetBatchId)
+    || !isNonEmptyString(payload.reason)
+    || !Array.isArray(payload.adjustments)
+    || typeof payload.root !== "string" || !HASH.test(payload.root)
+    || !isNonEmptyString(payload.txRef)
+    || !isRfc3339UtcMillisecond(payload.committedAt)) return false;
+  return payload.adjustments.every((adjustment) => {
+    const entry = object(adjustment as JsonValue);
+    return !!entry
+      && exactlyKeys(entry, ["recipientId", "deltaPoints", "correctionType", "targetBatchId"])
+      && isNonEmptyString(entry.recipientId)
+      && isPoints(entry.deltaPoints)
+      && (entry.correctionType === "adjust" || entry.correctionType === "add_missing")
+      && isNonEmptyString(entry.targetBatchId);
+  });
+}
+
+function validCumulativeSnapshotPayload(payload: { readonly [key: string]: JsonValue }): boolean {
+  return exactlyKeys(payload, ["snapshotId", "snapshotRoot", "leafCount", "throughBatchId", "throughEventHash", "txRef", "committedAt"])
+    && isNonEmptyString(payload.snapshotId)
+    && typeof payload.snapshotRoot === "string" && HASH.test(payload.snapshotRoot)
+    && Number.isSafeInteger(payload.leafCount) && Number(payload.leafCount) >= 0
+    && isNonEmptyString(payload.throughBatchId)
+    && typeof payload.throughEventHash === "string" && HASH.test(payload.throughEventHash)
+    && isNonEmptyString(payload.txRef)
+    && isRfc3339UtcMillisecond(payload.committedAt);
+}
+
 export function validateCheckpointSuffixEvent(event: SystemStreamEvent): string | undefined {
   if (!CHECKPOINT_SUFFIX_EVENT_NAMES.has(event.eventName)) return `Checkpoint suffix eventName "${event.eventName}" is unsupported.`;
   if (event.protocolVersion !== CHECKPOINT_PROTOCOL_VERSION) return `Checkpoint suffix event protocolVersion must equal ${CHECKPOINT_PROTOCOL_VERSION}.`;
@@ -260,6 +293,8 @@ export function validateCheckpointSuffixEvent(event: SystemStreamEvent): string 
   if (event.eventId !== expectedEventId) return "Checkpoint suffix eventId does not match its canonical event domain.";
   if (event.eventName === "REWARD_BATCH_COMMITTED" && !validCommittedPayload(event.payload)) return "REWARD_BATCH_COMMITTED payload is malformed.";
   if (event.eventName === "REWARD_BATCH_BACKING_ATTESTED" && !validBackingPayload(event.payload)) return "REWARD_BATCH_BACKING_ATTESTED payload is malformed.";
+  if (event.eventName === "REWARD_BATCH_CORRECTION" && !validCorrectionPayload(event.payload)) return "REWARD_BATCH_CORRECTION payload is malformed.";
+  if (event.eventName === "CUMULATIVE_SNAPSHOT_COMMITTED" && !validCumulativeSnapshotPayload(event.payload)) return "CUMULATIVE_SNAPSHOT_COMMITTED payload is malformed.";
   return undefined;
 }
 
@@ -468,7 +503,10 @@ export async function replaySystemStreamSuffix(
     const signer = registry.get(event.signedBy);
     const at = effectiveTime(event);
     if (
-      (event.eventName === "REWARD_BATCH_COMMITTED" || event.eventName === "REWARD_BATCH_BACKING_ATTESTED")
+      (event.eventName === "REWARD_BATCH_COMMITTED"
+        || event.eventName === "REWARD_BATCH_BACKING_ATTESTED"
+        || event.eventName === "REWARD_BATCH_CORRECTION"
+        || event.eventName === "CUMULATIVE_SNAPSHOT_COMMITTED")
       && countAuthoritiesValidAt(registry, at) !== 1
     ) {
       eventSignatureValid.set(event.eventHash, false);
@@ -531,6 +569,9 @@ export async function replaySystemStreamSuffix(
       }
       target.validUntil = validUntil;
       if (pendingRotation) pendingRotation = undefined;
+    } else if (event.eventName === "REWARD_BATCH_CORRECTION" || event.eventName === "CUMULATIVE_SNAPSHOT_COMMITTED") {
+      // These signed events authenticate stream continuity only. They neither
+      // replace the token's terminal commitment/backing event nor alter its tier.
     }
   }
 
