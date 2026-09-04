@@ -35,6 +35,8 @@ export type VerificationErrorCode =
   | "BACKING_EVENT_INVALID"
   | "REWARD_INCLUSION_PROOF_INVALID"
   | "SPEND_REWARD_LINKAGE_MISMATCH"
+  | "CHECKPOINT_INVALID"
+  | "CHECKPOINT_UNTRUSTED"
   | "CHAIN_EVIDENCE_INVALID"
   | "CHAIN_EVIDENCE_MISMATCH";
 
@@ -361,6 +363,70 @@ export interface RewardCommitmentTokenV1 {
   [key: string]: unknown;
 }
 
+/** A canonical authority record captured by an AuthorityCheckpointV1. */
+export interface AuthorityCheckpointRegistryRecordV1 {
+  authorityId: string;
+  publicKey: string;
+  validFrom: string;
+  validUntil: string | null;
+  revokedBy: string | null;
+}
+
+/**
+ * A separately root-signed, immutable assertion of System Stream authority
+ * state at one exact predecessor head. The checkpoint root is a verifier
+ * policy input; this object never treats its transport source as trusted.
+ */
+export interface AuthorityCheckpointV1 {
+  checkpointType: "AUTHORITY_CHECKPOINT";
+  schemaVersion: 1;
+  protocol: { protocolVersion: string };
+  evidenceProfile: "configured-checkpoint-root/v1";
+  chainId: string;
+  sequence: number;
+  covered: {
+    streamHeight: number;
+    headEventHash: string;
+    effectiveAt: string;
+  };
+  authorityState: {
+    stateHash: string;
+    records: AuthorityCheckpointRegistryRecordV1[];
+  };
+  previousCheckpointHash: string | null;
+  limits: { maxSuffixEvents: 128 };
+  signatures: {
+    issuedBy: string;
+    keyId: string;
+    publicKey: string;
+    checkpointHash: string;
+    signature: string;
+  };
+}
+
+/**
+ * Compact successor to RewardCommitmentTokenV1. The bounded suffix begins
+ * immediately after authorityCheckpoint.headEventHash and terminates at the
+ * commitment evidence used by this token.
+ */
+export interface RewardCommitmentTokenV2 {
+  tokenType: "REWARD_COMMITMENT";
+  schemaVersion: 2;
+  evidenceProfile: "configured-checkpoint-root/v1";
+  chainId: string;
+  economicTier: "COMMITTED" | "COMMITTED_BACKED";
+  authorityCheckpoint: AuthorityCheckpointV1;
+  systemEventSuffix: SystemStreamEvent[];
+  commitmentEvent: SystemStreamEvent;
+  backingEvent?: SystemStreamEvent;
+  batch: RewardBatchCommittedPayload;
+  recipientId: string;
+  leaf: { readonly [key: string]: JsonValue };
+  proof: InclusionProofV1;
+  rewardInclusionProof?: RewardInclusionProofV1;
+  [key: string]: unknown;
+}
+
 /**
  * Caller-owned resolver that authorizes the *genesis* authority of a
  * `chainId` (the authority established by the first `AUTHORITY_REGISTERED`
@@ -378,6 +444,24 @@ export type AuthorityTrustResolver = (input: {
   authorityId: string;
   publicKeyBase64: string;
   validFrom: string;
+}) => boolean | Promise<boolean>;
+
+/**
+ * Authorizes an exact AuthorityCheckpointV1 under the caller-owned
+ * configured-checkpoint-root/v1 trust profile. Returning true authorizes only
+ * this canonical checkpoint identity, never its delivery source.
+ */
+export type AuthorityCheckpointTrustResolver = (input: {
+  profile: "configured-checkpoint-root/v1";
+  checkpointHash: string;
+  chainId: string;
+  sequence: number;
+  streamHeight: number;
+  headEventHash: string;
+  previousCheckpointHash: string | null;
+  issuedBy: string;
+  keyId: string;
+  publicKey: string;
 }) => boolean | Promise<boolean>;
 
 export interface SystemStreamHistoryResolverInput {
@@ -491,6 +575,21 @@ export interface RewardCommitmentVerificationOptions {
   solanaEvidenceTrust?: SolanaEvidenceTrustResolver;
 }
 
+export interface RewardCommitmentV2VerificationOptions {
+  /** Caller-owned configured checkpoint-root/v1 authorization. Required. */
+  authorityCheckpointTrust?: AuthorityCheckpointTrustResolver;
+  /** Reject checkpoint rollback below this caller-owned, durable sequence floor. */
+  minimumCheckpointSequence?: number;
+  /** Require the exact configured predecessor identity when the caller has one. */
+  expectedPreviousCheckpointHash?: string | null;
+  /** Defaults to 128 and cannot exceed 128. */
+  maxSuffixEvents?: number;
+  /** Defaults to `{ mode: "none" }`. */
+  chainEvidence?: ChainEvidence;
+  /** Required by `chainEvidence.mode === "solana-rpc"`. */
+  solanaEvidenceTrust?: SolanaEvidenceTrustResolver;
+}
+
 export interface RewardCommitmentVerificationResult {
   format: "crinkl-reward-commitment/v1";
   schemaVersion: "1" | "unknown";
@@ -519,6 +618,32 @@ export interface RewardCommitmentVerificationResult {
     batchId?: string;
     recipientId?: string;
     committedAt?: string;
+  };
+}
+
+export interface RewardCommitmentV2VerificationResult {
+  format: "crinkl-reward-commitment/v2";
+  schemaVersion: "2" | "unknown";
+  checkpointValid: boolean;
+  systemStreamValid: boolean;
+  authorityValid: boolean | "not_checked";
+  commitmentValid: boolean;
+  merkleValid: boolean;
+  economicTier: "COMMITTED" | "COMMITTED_BACKED" | "unknown";
+  backingValid: boolean | "not_applicable";
+  anchor: AnchorStatus;
+  accepted: boolean;
+  errors: VerificationError[];
+  warnings: VerificationWarning[];
+  metadata: {
+    chainId?: string;
+    batchId?: string;
+    recipientId?: string;
+    committedAt?: string;
+    checkpointSequence?: number;
+    checkpointHash?: string;
+    checkpointHeight?: number;
+    suffixEventCount?: number;
   };
 }
 

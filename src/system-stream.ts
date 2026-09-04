@@ -1,6 +1,7 @@
 import { base64ToBytes, canonicalizeJcs, hexToBytes, sha256HexUtf8, verifyEd25519 } from "./crypto.js";
 import type { JsonValue } from "./json.js";
 import type {
+  AuthorityCheckpointRegistryRecordV1,
   AuthorityTrustResolver,
   SystemStreamEvent,
   VerificationCause,
@@ -45,6 +46,17 @@ export interface SystemStreamReplayResult {
   /** Final Authority Registry state after replaying the whole segment. */
   registry: Map<string, AuthorityRecordState>;
   /** Per-event (`eventHash`) signature verification outcome. Only populated when a genesis authority was bootstrapped and trusted. */
+  eventSignatureValid: Map<string, boolean>;
+  errors: ReplayError[];
+}
+
+/** Result of replaying a bounded suffix from a separately trusted checkpoint. */
+export interface SystemStreamSuffixReplayResult {
+  ordered: SystemStreamEvent[];
+  integrityValid: boolean;
+  fork: boolean;
+  gap: boolean;
+  registry: Map<string, AuthorityRecordState>;
   eventSignatureValid: Map<string, boolean>;
   errors: ReplayError[];
 }
@@ -277,6 +289,94 @@ export async function replaySystemStreamSegment(
   }
 
   return { ordered, genesisStart, integrityValid, fork, gap, authorityBootstrap: "trusted", registry, eventSignatureValid, errors };
+}
+
+/**
+ * Replays a contiguous System Stream suffix whose predecessor authority state
+ * was authenticated by an AuthorityCheckpointV1. The checkpoint itself is
+ * verified by the V2 reward verifier before this function is called.
+ */
+export async function replaySystemStreamSuffix(
+  events: readonly SystemStreamEvent[],
+  chainId: string,
+  expectedPrevHash: string,
+  checkpointRegistry: readonly AuthorityCheckpointRegistryRecordV1[]
+): Promise<SystemStreamSuffixReplayResult> {
+  const errors: ReplayError[] = [];
+  const scoped = events.filter((event) => event.chainId === chainId);
+  if (scoped.length !== events.length) {
+    errors.push({ code: "SYSTEM_STREAM_INVALID", message: "systemEventSuffix contains an event for a different chainId.", cause: "input", path: "$.systemEventSuffix" });
+  }
+
+  const { ordered, fork, gap } = orderSegment(scoped);
+  if (fork) errors.push({ code: "SYSTEM_STREAM_INVALID", message: "systemEventSuffix forms a fork: two events share a prevHash.", cause: "input", path: "$.systemEventSuffix" });
+  if (gap) errors.push({ code: "SYSTEM_STREAM_INVALID", message: "systemEventSuffix is not a single contiguous chain.", cause: "input", path: "$.systemEventSuffix" });
+
+  let integrityValid = !fork && !gap && ordered.length === scoped.length && ordered.length > 0;
+  if (ordered[0]?.prevHash !== expectedPrevHash) {
+    integrityValid = false;
+    errors.push({ code: "SYSTEM_STREAM_INVALID", message: "systemEventSuffix does not begin at authorityCheckpoint.covered.headEventHash.", cause: "input", path: "$.systemEventSuffix[0].prevHash" });
+  }
+  for (const event of ordered) {
+    if (computeSystemEventHash(event) !== event.eventHash) {
+      integrityValid = false;
+      errors.push({ code: "SYSTEM_STREAM_INVALID", message: `Recomputed eventHash does not match the stated value for eventId ${event.eventId}.`, cause: "crypto", path: "$.systemEventSuffix" });
+    }
+  }
+
+  const registry = new Map<string, AuthorityRecordState>();
+  const eventSignatureValid = new Map<string, boolean>();
+  for (const record of checkpointRegistry) {
+    registry.set(record.authorityId, {
+      publicKeyBase64: record.publicKey,
+      chainId,
+      validFrom: record.validFrom,
+      validUntil: record.validUntil
+    });
+  }
+  if (!integrityValid) return { ordered, integrityValid, fork, gap, registry, eventSignatureValid, errors };
+
+  for (const event of ordered) {
+    const signer = registry.get(event.signedBy);
+    const at = effectiveTime(event);
+    if (!signer || !authorityValidAt(signer, at)) {
+      eventSignatureValid.set(event.eventHash, false);
+      errors.push({ code: "AUTHORITY_INVALID", message: `signedBy "${event.signedBy}" is not a valid authority for chainId "${chainId}" at effective time ${at}.`, cause: "trust", path: "$.systemEventSuffix" });
+      continue;
+    }
+    const signatureValid = await verifyEnvelopeSignature(event, signer.publicKeyBase64);
+    eventSignatureValid.set(event.eventHash, signatureValid);
+    if (!signatureValid) {
+      errors.push({ code: "AUTHORITY_INVALID", message: `Signature verification failed for eventId ${event.eventId}.`, cause: "crypto", path: "$.systemEventSuffix" });
+      continue;
+    }
+    if (event.eventName === "AUTHORITY_REGISTERED") {
+      const authorityId = event.payload.authorityId;
+      const publicKey = event.payload.publicKey;
+      const validFrom = event.payload.validFrom;
+      if (typeof authorityId === "string" && typeof publicKey === "string" && typeof validFrom === "string") {
+        registry.set(authorityId, { publicKeyBase64: publicKey, chainId, validFrom, validUntil: null });
+      } else {
+        errors.push({ code: "SYSTEM_STREAM_INVALID", message: `AUTHORITY_REGISTERED payload is malformed for eventId ${event.eventId}.`, cause: "input", path: "$.systemEventSuffix" });
+      }
+    } else if (event.eventName === "AUTHORITY_REVOKED") {
+      const authorityId = event.payload.authorityId;
+      const validUntil = event.payload.validUntil;
+      const revokedBy = event.payload.revokedBy;
+      if (typeof authorityId !== "string" || typeof validUntil !== "string" || typeof revokedBy !== "string" || revokedBy !== event.signedBy) {
+        errors.push({ code: "SYSTEM_STREAM_INVALID", message: `AUTHORITY_REVOKED payload is malformed or revokedBy does not match signedBy for eventId ${event.eventId}.`, cause: "input", path: "$.systemEventSuffix" });
+        continue;
+      }
+      const target = registry.get(authorityId);
+      if (!target) {
+        errors.push({ code: "SYSTEM_STREAM_INVALID", message: `AUTHORITY_REVOKED references an unknown authorityId "${authorityId}".`, cause: "input", path: "$.systemEventSuffix" });
+        continue;
+      }
+      target.validUntil = validUntil;
+    }
+  }
+
+  return { ordered, integrityValid, fork, gap, registry, eventSignatureValid, errors };
 }
 
 export function findAuthorityRecordAt(
