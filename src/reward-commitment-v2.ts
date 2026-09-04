@@ -1,7 +1,12 @@
 import { base64ToBytes, canonicalizeJcs, hexToBytes, sha256HexUtf8, verifyEd25519 } from "./crypto.js";
 import { createInertJsonSnapshot, type JsonValue } from "./json.js";
 import { verifyInclusionProof } from "./merkle.js";
-import { replaySystemStreamSuffix, validateSystemStreamEventShape } from "./system-stream.js";
+import {
+  isRfc3339UtcMillisecond,
+  replaySystemStreamSuffix,
+  validateCheckpointSuffixEvent,
+  validateSystemStreamEventShape
+} from "./system-stream.js";
 import { verifySolanaBatchAnchor } from "./solana.js";
 import type {
   AnchorStatus,
@@ -18,16 +23,11 @@ import type {
 
 const AMOUNT = /^(0|[1-9][0-9]*)$/;
 const HASH = /^[0-9a-f]{64}$/;
-const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const CHECKPOINT_PROFILE = "configured-checkpoint-root/v1" as const;
 const CHECKPOINT_PROTOCOL_VERSION = "1.0.0-rc.1";
 const MAX_SUFFIX_EVENTS = 128;
-const CHECKPOINT_SUFFIX_EVENT_NAMES = new Set([
-  "AUTHORITY_REGISTERED",
-  "AUTHORITY_REVOKED",
-  "REWARD_BATCH_COMMITTED",
-  "REWARD_BATCH_BACKING_ATTESTED"
-]);
+const MAX_AUTHORITY_RECORDS = 256;
+const MAX_MERKLE_SIBLINGS = 64;
 const encoder = new TextEncoder();
 
 function object(value: JsonValue | undefined): { readonly [key: string]: JsonValue } | undefined {
@@ -46,6 +46,11 @@ function isNonEmptyString(value: unknown): value is string {
 
 function isPoints(value: unknown): value is string {
   return typeof value === "string" && AMOUNT.test(value);
+}
+
+function isEd25519PublicKey(value: unknown): value is string {
+  const bytes = typeof value === "string" ? base64ToBytes(value) : undefined;
+  return bytes !== undefined && bytes.length === 32;
 }
 
 function owns(value: { readonly [key: string]: JsonValue }, key: string): boolean {
@@ -77,12 +82,16 @@ function compareUtf8(a: string, b: string): number {
   return left.length - right.length;
 }
 
-function intervalsOverlap(
-  left: AuthorityCheckpointRegistryRecordV1,
-  right: AuthorityCheckpointRegistryRecordV1
-): boolean {
-  return (right.validUntil === null || left.validFrom < right.validUntil)
-    && (left.validUntil === null || right.validFrom < left.validUntil);
+function hasOverlappingAuthorityValidity(records: readonly AuthorityCheckpointRegistryRecordV1[]): boolean {
+  const ordered = [...records].sort((left, right) => compareUtf8(left.validFrom, right.validFrom));
+  let latestValidUntil: string | null | undefined;
+  for (const record of ordered) {
+    if (latestValidUntil === null || (latestValidUntil !== undefined && record.validFrom < latestValidUntil)) return true;
+    if (record.validUntil === null || latestValidUntil === undefined || record.validUntil > latestValidUntil) {
+      latestValidUntil = record.validUntil;
+    }
+  }
+  return false;
 }
 
 function resultFor(): RewardCommitmentV2VerificationResult {
@@ -129,19 +138,11 @@ function parseSystemEvent(input: JsonValue, path: string, result: RewardCommitme
 function parseCheckpointSuffixEvent(input: JsonValue, path: string, result: RewardCommitmentV2VerificationResult): SystemStreamEvent | undefined {
   const event = parseSystemEvent(input, path, result);
   if (!event) return undefined;
-  if (!CHECKPOINT_SUFFIX_EVENT_NAMES.has(event.eventName)) {
-    invalid(result, `${path}.eventName`, "Checkpoint suffix contains an unsupported eventName.");
+  const shapeError = validateCheckpointSuffixEvent(event);
+  if (shapeError) {
+    invalid(result, path, shapeError);
+    return undefined;
   }
-  if (event.protocolVersion !== CHECKPOINT_PROTOCOL_VERSION) {
-    invalid(result, `${path}.protocolVersion`, `Checkpoint suffix event protocolVersion must equal ${CHECKPOINT_PROTOCOL_VERSION}.`);
-  }
-  const eventId = `sha256:${sha256HexUtf8(canonicalizeJcs({
-    chainId: event.chainId,
-    eventName: event.eventName,
-    payload: event.payload,
-    protocolVersion: event.protocolVersion
-  }))}`;
-  if (event.eventId !== eventId) invalid(result, `${path}.eventId`, "Checkpoint suffix eventId does not match its canonical event domain.");
   return event;
 }
 
@@ -197,19 +198,21 @@ function parseCheckpoint(
     !covered || !exactlyKeys(covered, ["streamHeight", "headEventHash", "effectiveAt"])
     || !Number.isSafeInteger(covered.streamHeight) || Number(covered.streamHeight) < 1
     || typeof covered.headEventHash !== "string" || !HASH.test(covered.headEventHash)
-    || typeof covered.effectiveAt !== "string" || !TIMESTAMP.test(covered.effectiveAt)
+    || !isRfc3339UtcMillisecond(covered.effectiveAt)
   ) {
     invalid(result, "$.authorityCheckpoint.covered", "covered must contain a positive streamHeight, headEventHash, and UTC millisecond effectiveAt.");
   }
   const limits = object(checkpoint.limits);
-  if (!limits || !exactlyKeys(limits, ["maxSuffixEvents"]) || limits.maxSuffixEvents !== MAX_SUFFIX_EVENTS) {
-    invalid(result, "$.authorityCheckpoint.limits", "checkpoint limits.maxSuffixEvents must equal 128.");
+  if (!limits || !exactlyKeys(limits, ["maxSuffixEvents", "maxAuthorityRecords"]) || limits.maxSuffixEvents !== MAX_SUFFIX_EVENTS || limits.maxAuthorityRecords !== MAX_AUTHORITY_RECORDS) {
+    invalid(result, "$.authorityCheckpoint.limits", "checkpoint limits must equal maxSuffixEvents 128 and maxAuthorityRecords 256.");
   }
   const authorityState = object(checkpoint.authorityState);
   const recordsRaw = authorityState ? array(authorityState.records) : undefined;
   const records: AuthorityCheckpointRegistryRecordV1[] = [];
   if (!authorityState || !exactlyKeys(authorityState, ["stateHash", "records"]) || typeof authorityState.stateHash !== "string" || !HASH.test(authorityState.stateHash) || !recordsRaw || recordsRaw.length === 0) {
     invalid(result, "$.authorityCheckpoint.authorityState", "authorityState must contain a lowercase stateHash and non-empty records.");
+  } else if (recordsRaw.length > MAX_AUTHORITY_RECORDS) {
+    invalid(result, "$.authorityCheckpoint.authorityState.records", "authorityState.records exceeds the signed configured-checkpoint-root/v1 limit of 256.");
   } else {
     let priorAuthorityId: string | undefined;
     const publicKeys = new Set<string>();
@@ -224,7 +227,7 @@ function parseCheckpoint(
       const validFrom = record.validFrom;
       const validUntil = record.validUntil;
       const revokedBy = record.revokedBy;
-      if (!isNonEmptyString(authorityId) || !isNonEmptyString(publicKey) || typeof validFrom !== "string" || !TIMESTAMP.test(validFrom) || (validUntil !== null && (typeof validUntil !== "string" || !TIMESTAMP.test(validUntil))) || (revokedBy !== null && !isNonEmptyString(revokedBy))) {
+      if (!isNonEmptyString(authorityId) || !isEd25519PublicKey(publicKey) || !isRfc3339UtcMillisecond(validFrom) || (validUntil !== null && !isRfc3339UtcMillisecond(validUntil)) || (revokedBy !== null && !isNonEmptyString(revokedBy))) {
         invalid(result, `$.authorityCheckpoint.authorityState.records[${index}]`, "authority record contains invalid authority or validity fields.");
         continue;
       }
@@ -240,12 +243,8 @@ function parseCheckpoint(
       publicKeys.add(publicKey);
       records.push({ authorityId, publicKey, validFrom, validUntil, revokedBy });
     }
-    for (let left = 0; left < records.length; left += 1) {
-      for (let right = left + 1; right < records.length; right += 1) {
-        if (intervalsOverlap(records[left], records[right])) {
-          invalid(result, "$.authorityCheckpoint.authorityState.records", "authority records must not have overlapping validity intervals.");
-        }
-      }
+    if (hasOverlappingAuthorityValidity(records)) {
+      invalid(result, "$.authorityCheckpoint.authorityState.records", "authority checkpoint state must not contain overlapping authority validity windows.");
     }
   }
   if (checkpoint.sequence === 1 && checkpoint.previousCheckpointHash !== null) {
@@ -278,7 +277,7 @@ function parseCheckpoint(
     },
     authorityState: { stateHash: authorityState.stateHash as string, records },
     previousCheckpointHash: checkpoint.previousCheckpointHash as string | null,
-    limits: { maxSuffixEvents: MAX_SUFFIX_EVENTS },
+    limits: { maxSuffixEvents: MAX_SUFFIX_EVENTS, maxAuthorityRecords: MAX_AUTHORITY_RECORDS },
     signatures: {
       issuedBy: signatures.issuedBy as string,
       keyId: signatures.keyId as string,
@@ -324,7 +323,7 @@ function parseToken(input: JsonValue, result: RewardCommitmentV2VerificationResu
   }
 
   const batch = object(token.batch as JsonValue);
-  if (!batch || !isNonEmptyString(batch.batchId) || !HASH.test(String(batch.root)) || !isNonEmptyString(batch.schemaVersion) || !isNonEmptyString(batch.txRef) || !isNonEmptyString(batch.committedAt)) {
+  if (!batch || !exactlyKeys(batch, ["batchId", "root", "leafCount", "totalPoints", "schemaVersion", "txRef", "committedAt"]) || !isNonEmptyString(batch.batchId) || !HASH.test(String(batch.root)) || !Number.isSafeInteger(batch.leafCount) || Number(batch.leafCount) < 1 || !isPoints(batch.totalPoints) || !isNonEmptyString(batch.schemaVersion) || !isNonEmptyString(batch.txRef) || !isRfc3339UtcMillisecond(batch.committedAt)) {
     invalid(result, "$.batch", "batch must contain valid batchId, root, schemaVersion, txRef, and committedAt fields.");
   }
   const batchSchema = typeof batch?.schemaVersion === "string" ? batch.schemaVersion : undefined;
@@ -348,7 +347,7 @@ function parseToken(input: JsonValue, result: RewardCommitmentV2VerificationResu
   const proof = object(token.proof as JsonValue);
   const proofLeaf = proof ? object(proof.leaf as JsonValue) : undefined;
   const siblings = proof ? array(proof.siblings as JsonValue) : undefined;
-  if (!proof || !isNonEmptyString(proof.batchId) || !proofLeaf || !HASH.test(String(proof.leafHash)) || !siblings || !siblings.every((sibling) => typeof sibling === "string" && HASH.test(sibling))) {
+  if (!proof || !isNonEmptyString(proof.batchId) || !proofLeaf || !HASH.test(String(proof.leafHash)) || !siblings || siblings.length > MAX_MERKLE_SIBLINGS || !siblings.every((sibling) => typeof sibling === "string" && HASH.test(sibling))) {
     invalid(result, "$.proof", "proof must contain batchId, leaf, a lowercase SHA-256 leafHash, and sibling hashes.");
   } else if (proof.batchId !== batch?.batchId) invalid(result, "$.proof.batchId", "proof.batchId must equal batch.batchId.");
   let rewardInclusionProof: RewardCommitmentTokenV2["rewardInclusionProof"] | undefined;
@@ -358,7 +357,7 @@ function parseToken(input: JsonValue, result: RewardCommitmentV2VerificationResu
     const rip = object(token.rewardInclusionProof as JsonValue);
     const ripLeaf = rip ? object(rip.leaf as JsonValue) : undefined;
     const ripSiblings = rip ? array(rip.siblings as JsonValue) : undefined;
-    if (!rip || !isNonEmptyString(rip.batchId) || !isNonEmptyString(rip.recipientId) || !HASH.test(String(rip.rewardEventsRoot)) || !ripLeaf || !exactlyKeys(ripLeaf, ["spendId", "rewardEventHash"]) || !isNonEmptyString(ripLeaf.spendId) || !HASH.test(String(ripLeaf.rewardEventHash)) || !HASH.test(String(rip.leafHash)) || !ripSiblings || !ripSiblings.every((sibling) => typeof sibling === "string" && HASH.test(sibling))) {
+    if (!rip || !isNonEmptyString(rip.batchId) || !isNonEmptyString(rip.recipientId) || !HASH.test(String(rip.rewardEventsRoot)) || !ripLeaf || !exactlyKeys(ripLeaf, ["spendId", "rewardEventHash"]) || !isNonEmptyString(ripLeaf.spendId) || !HASH.test(String(ripLeaf.rewardEventHash)) || !HASH.test(String(rip.leafHash)) || !ripSiblings || ripSiblings.length > MAX_MERKLE_SIBLINGS || !ripSiblings.every((sibling) => typeof sibling === "string" && HASH.test(sibling))) {
       addError(result, "REWARD_INCLUSION_PROOF_INVALID", "rewardInclusionProof is malformed.", "input", "$.rewardInclusionProof");
     } else {
       rewardInclusionProof = { batchId: rip.batchId as string, recipientId: rip.recipientId as string, rewardEventsRoot: rip.rewardEventsRoot as string, leaf: { spendId: ripLeaf.spendId as string, rewardEventHash: ripLeaf.rewardEventHash as string }, leafHash: rip.leafHash as string, siblings: ripSiblings as string[] };
@@ -447,35 +446,40 @@ async function applyChainEvidence(result: RewardCommitmentV2VerificationResult, 
   }
 }
 
-async function verifyCheckpoint(
+function checkpointRootsMatch(left: AuthorityCheckpointV1, right: AuthorityCheckpointV1): boolean {
+  return left.signatures.issuedBy === right.signatures.issuedBy
+    && left.signatures.keyId === right.signatures.keyId
+    && left.signatures.publicKey === right.signatures.publicKey;
+}
+
+function verifyCheckpointIntegrity(
   checkpoint: AuthorityCheckpointV1,
   tokenChainId: string,
-  options: RewardCommitmentV2VerificationOptions,
-  result: RewardCommitmentV2VerificationResult
-): Promise<boolean> {
+  result: RewardCommitmentV2VerificationResult,
+  path: string
+): boolean {
   const calculatedStateHash = computeAuthorityCheckpointRegistryStateHash(checkpoint.chainId, checkpoint.covered.headEventHash, checkpoint.authorityState.records);
   if (calculatedStateHash !== checkpoint.authorityState.stateHash) {
-    addError(result, "CHECKPOINT_INVALID", "checkpoint authorityState.stateHash does not match canonical authority records.", "crypto", "$.authorityCheckpoint.authorityState.stateHash");
+    addError(result, "CHECKPOINT_INVALID", "checkpoint authorityState.stateHash does not match canonical authority records.", "crypto", `${path}.authorityState.stateHash`);
     return false;
   }
   const calculatedCheckpointHash = computeAuthorityCheckpointV1Hash(checkpoint);
   if (calculatedCheckpointHash !== checkpoint.signatures.checkpointHash) {
-    addError(result, "CHECKPOINT_INVALID", "checkpoint signatures.checkpointHash does not match canonical checkpoint bytes.", "crypto", "$.authorityCheckpoint.signatures.checkpointHash");
+    addError(result, "CHECKPOINT_INVALID", "checkpoint signatures.checkpointHash does not match canonical checkpoint bytes.", "crypto", `${path}.signatures.checkpointHash`);
     return false;
   }
   if (checkpoint.chainId !== tokenChainId) {
-    addError(result, "CHECKPOINT_INVALID", "checkpoint chainId does not equal token chainId.", "input", "$.authorityCheckpoint.chainId");
+    addError(result, "CHECKPOINT_INVALID", "checkpoint chainId does not equal token chainId.", "input", `${path}.chainId`);
     return false;
   }
-  const minimum = options.minimumCheckpointSequence;
-  if (minimum !== undefined && (!Number.isSafeInteger(minimum) || minimum < 1 || checkpoint.sequence < minimum)) {
-    addError(result, "CHECKPOINT_INVALID", "checkpoint sequence is below the configured durable sequence floor.", "policy", "$.options.minimumCheckpointSequence");
-    return false;
-  }
-  if (options.expectedPreviousCheckpointHash !== undefined && checkpoint.previousCheckpointHash !== options.expectedPreviousCheckpointHash) {
-    addError(result, "CHECKPOINT_INVALID", "checkpoint predecessor does not equal the caller-configured expected predecessor.", "policy", "$.authorityCheckpoint.previousCheckpointHash");
-    return false;
-  }
+  return true;
+}
+
+async function verifyCheckpointSignature(
+  checkpoint: AuthorityCheckpointV1,
+  result: RewardCommitmentV2VerificationResult,
+  path: string
+): Promise<boolean> {
   const signature = base64ToBytes(checkpoint.signatures.signature);
   const publicKey = base64ToBytes(checkpoint.signatures.publicKey);
   const digest = hexToBytes(checkpoint.signatures.checkpointHash);
@@ -486,9 +490,17 @@ async function verifyCheckpoint(
     signatureValid = false;
   }
   if (!signatureValid) {
-    addError(result, "CHECKPOINT_INVALID", "checkpoint signature does not verify.", "crypto", "$.authorityCheckpoint.signatures.signature");
-    return false;
+    addError(result, "CHECKPOINT_INVALID", "checkpoint signature does not verify.", "crypto", `${path}.signatures.signature`);
   }
+  return signatureValid;
+}
+
+async function checkpointRootTrusted(
+  checkpoint: AuthorityCheckpointV1,
+  options: RewardCommitmentV2VerificationOptions,
+  result: RewardCommitmentV2VerificationResult,
+  path: string
+): Promise<boolean> {
   if (!options.authorityCheckpointTrust) {
     addError(result, "CHECKPOINT_UNTRUSTED", "No configured checkpoint-root trust resolver authorized this checkpoint.", "trust", "$.options.authorityCheckpointTrust");
     return false;
@@ -511,8 +523,82 @@ async function verifyCheckpoint(
     trusted = false;
   }
   if (!trusted) {
-    addError(result, "CHECKPOINT_UNTRUSTED", "The configured checkpoint-root trust resolver did not authorize this checkpoint.", "trust", "$.authorityCheckpoint.signatures");
+    addError(result, "CHECKPOINT_UNTRUSTED", "The configured checkpoint-root trust resolver did not authorize this checkpoint.", "trust", path);
+  }
+  return trusted;
+}
+
+function parseAdmittedCheckpoint(input: unknown): AuthorityCheckpointV1 | undefined {
+  const snapshot = createInertJsonSnapshot(input);
+  if (snapshot.error || snapshot.value === undefined) return undefined;
+  const parsed = resultFor();
+  return parseCheckpoint(snapshot.value, parsed);
+}
+
+async function verifyCheckpoint(
+  checkpoint: AuthorityCheckpointV1,
+  tokenChainId: string,
+  options: RewardCommitmentV2VerificationOptions,
+  result: RewardCommitmentV2VerificationResult
+): Promise<boolean> {
+  if (!verifyCheckpointIntegrity(checkpoint, tokenChainId, result, "$.authorityCheckpoint")) return false;
+  const minimum = options.minimumCheckpointSequence;
+  if (minimum !== undefined && (!Number.isSafeInteger(minimum) || minimum < 1 || checkpoint.sequence < minimum)) {
+    addError(result, "CHECKPOINT_INVALID", "checkpoint sequence is below the configured durable sequence floor.", "policy", "$.options.minimumCheckpointSequence");
     return false;
+  }
+  if (options.expectedPreviousCheckpointHash !== undefined && checkpoint.previousCheckpointHash !== options.expectedPreviousCheckpointHash) {
+    addError(result, "CHECKPOINT_INVALID", "checkpoint predecessor does not equal the caller-configured expected predecessor.", "policy", "$.authorityCheckpoint.previousCheckpointHash");
+    return false;
+  }
+  if (!await verifyCheckpointSignature(checkpoint, result, "$.authorityCheckpoint")) return false;
+  if (!await checkpointRootTrusted(checkpoint, options, result, "$.authorityCheckpoint.signatures")) return false;
+
+  if (checkpoint.sequence === 1) {
+    if (checkpoint.previousCheckpointHash !== null) {
+      addError(result, "CHECKPOINT_INVALID", "checkpoint sequence 1 must have previousCheckpointHash null.", "policy", "$.authorityCheckpoint.previousCheckpointHash");
+      return false;
+    }
+  } else {
+    const expectedHash = checkpoint.previousCheckpointHash;
+    if (typeof expectedHash !== "string" || !HASH.test(expectedHash)) {
+      addError(result, "CHECKPOINT_INVALID", "checkpoint successors must name an exact immediate predecessor hash.", "policy", "$.authorityCheckpoint.previousCheckpointHash");
+      return false;
+    }
+    if (!options.resolveAdmittedAuthorityCheckpoint) {
+      addError(result, "CHECKPOINT_UNTRUSTED", "checkpoint successor requires one caller-resolved durably admitted immediate predecessor.", "trust", "$.options.resolveAdmittedAuthorityCheckpoint");
+      return false;
+    }
+    let resolved: unknown | null;
+    try {
+      resolved = await options.resolveAdmittedAuthorityCheckpoint(expectedHash);
+    } catch {
+      resolved = null;
+    }
+    const predecessor = resolved === null ? undefined : parseAdmittedCheckpoint(resolved);
+    if (!predecessor) {
+      addError(result, "CHECKPOINT_UNTRUSTED", "The caller did not provide an inert, canonical admitted immediate predecessor checkpoint.", "trust", "$.options.resolveAdmittedAuthorityCheckpoint");
+      return false;
+    }
+    if (predecessor.signatures.checkpointHash !== expectedHash) {
+      addError(result, "CHECKPOINT_INVALID", "The caller-resolved checkpoint hash does not equal the signed immediate predecessor hash.", "trust", "$.options.resolveAdmittedAuthorityCheckpoint");
+      return false;
+    }
+    if (options.expectedPreviousCheckpointHash !== undefined && predecessor.signatures.checkpointHash !== options.expectedPreviousCheckpointHash) {
+      addError(result, "CHECKPOINT_INVALID", "The caller-resolved predecessor conflicts with the configured predecessor hash pin.", "policy", "$.options.expectedPreviousCheckpointHash");
+      return false;
+    }
+    if (!checkpointRootsMatch(checkpoint, predecessor)) {
+      addError(result, "CHECKPOINT_UNTRUSTED", "The caller-resolved predecessor is not signed by the same configured checkpoint root.", "trust", "$.options.resolveAdmittedAuthorityCheckpoint");
+      return false;
+    }
+    if (predecessor.sequence !== checkpoint.sequence - 1 || predecessor.covered.streamHeight >= checkpoint.covered.streamHeight) {
+      addError(result, "CHECKPOINT_INVALID", "The caller-resolved predecessor is not the immediate lower checkpoint with an earlier covered stream height.", "policy", "$.options.resolveAdmittedAuthorityCheckpoint");
+      return false;
+    }
+    if (!verifyCheckpointIntegrity(predecessor, tokenChainId, result, "$.options.resolveAdmittedAuthorityCheckpoint")) return false;
+    if (!await verifyCheckpointSignature(predecessor, result, "$.options.resolveAdmittedAuthorityCheckpoint")) return false;
+    if (!await checkpointRootTrusted(predecessor, options, result, "$.options.resolveAdmittedAuthorityCheckpoint")) return false;
   }
   return true;
 }
@@ -522,13 +608,19 @@ async function verifyCheckpoint(
  * bounded authority suffix. V1 history resolution is deliberately never used.
  */
 export async function verifyRewardCommitmentV2(input: unknown, options: RewardCommitmentV2VerificationOptions = {}): Promise<RewardCommitmentV2VerificationResult> {
-  const result = resultFor();
   const snapshot = createInertJsonSnapshot(input);
   if (snapshot.error || snapshot.value === undefined) {
+    const result = resultFor();
     invalid(result, "$", `Reward commitment token must be inert JSON: ${snapshot.error ?? "missing JSON value"}`);
     return result;
   }
-  const token = parseToken(snapshot.value, result);
+  return verifyRewardCommitmentV2Snapshot(snapshot.value, options);
+}
+
+/** Verifies an already-inert V2 token snapshot without rereading mutable caller input. */
+export async function verifyRewardCommitmentV2Snapshot(input: JsonValue, options: RewardCommitmentV2VerificationOptions = {}): Promise<RewardCommitmentV2VerificationResult> {
+  const result = resultFor();
+  const token = parseToken(input, result);
   if (!token) return result;
   result.schemaVersion = "2";
   result.metadata = {

@@ -394,7 +394,7 @@ export interface AuthorityCheckpointV1 {
     records: AuthorityCheckpointRegistryRecordV1[];
   };
   previousCheckpointHash: string | null;
-  limits: { maxSuffixEvents: 128 };
+  limits: { maxSuffixEvents: 128; maxAuthorityRecords: 256 };
   signatures: {
     issuedBy: string;
     keyId: string;
@@ -463,6 +463,17 @@ export type AuthorityCheckpointTrustResolver = (input: {
   keyId: string;
   publicKey: string;
 }) => boolean | Promise<boolean>;
+
+/**
+ * Resolves exactly one checkpoint that the caller has already admitted into
+ * durable custody. This verifier never discovers, fetches, or recursively
+ * replays checkpoint history: for a successor it calls this resolver once,
+ * with only the signed immediate predecessor hash, and requires the returned
+ * checkpoint to independently verify under the same configured root.
+ */
+export type AdmittedAuthorityCheckpointResolver = (
+  checkpointHash: string
+) => unknown | null | Promise<unknown | null>;
 
 export interface SystemStreamHistoryResolverInput {
   chainId: string;
@@ -578,9 +589,14 @@ export interface RewardCommitmentVerificationOptions {
 export interface RewardCommitmentV2VerificationOptions {
   /** Caller-owned configured checkpoint-root/v1 authorization. Required. */
   authorityCheckpointTrust?: AuthorityCheckpointTrustResolver;
+  /**
+   * Caller-owned bounded resolver for one durably admitted immediate
+   * predecessor. Required when `authorityCheckpoint.sequence > 1`.
+   */
+  resolveAdmittedAuthorityCheckpoint?: AdmittedAuthorityCheckpointResolver;
   /** Reject checkpoint rollback below this caller-owned, durable sequence floor. */
   minimumCheckpointSequence?: number;
-  /** Require the exact configured predecessor identity when the caller has one. */
+  /** Additional compatible predecessor-hash pin; it never substitutes for admitted predecessor evidence. */
   expectedPreviousCheckpointHash?: string | null;
   /** Defaults to 128 and cannot exceed 128. */
   maxSuffixEvents?: number;

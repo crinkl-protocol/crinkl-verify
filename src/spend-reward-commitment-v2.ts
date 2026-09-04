@@ -1,6 +1,6 @@
 import { createInertJsonSnapshot, type JsonValue } from "./json.js";
-import { verifyNativeSpendAttestation } from "./native-v1.js";
-import { verifyRewardCommitmentV2 } from "./reward-commitment-v2.js";
+import { verifyNativeSpendAttestation, verifyNativeSpendAttestationSnapshot } from "./native-v1.js";
+import { verifyRewardCommitmentV2, verifyRewardCommitmentV2Snapshot } from "./reward-commitment-v2.js";
 import type {
   SpendRewardClaimTier,
   SpendRewardCommitmentV2Options,
@@ -26,7 +26,11 @@ export async function verifySpendRewardCommitmentV2(
   rewardCommitmentToken: unknown | undefined,
   options: SpendRewardCommitmentV2Options = {}
 ): Promise<SpendRewardCommitmentV2Result> {
-  const spend = await verifyNativeSpendAttestation(spendToken, options);
+  const spendSnapshot = createInertJsonSnapshot(spendToken);
+  const rewardSnapshot = createInertJsonSnapshot(rewardCommitmentToken);
+  const spend = spendSnapshot.value === undefined
+    ? await verifyNativeSpendAttestation(undefined, options)
+    : await verifyNativeSpendAttestationSnapshot(spendSnapshot.value, options);
   const errors: VerificationError[] = [...spend.errors];
   const warnings: VerificationWarning[] = [...spend.warnings];
   const spendCryptoValid = spend.cryptographicallyValid && spend.issuerAuthorized === true;
@@ -39,9 +43,9 @@ export async function verifySpendRewardCommitmentV2(
     return { tier: "crypto-valid", spend, linkage: "not-checked", anchor: "not-checked", errors, warnings };
   }
 
-  const rewardSnapshot = createInertJsonSnapshot(rewardCommitmentToken);
-  const spendSnapshot = createInertJsonSnapshot(spendToken);
-  const reward = await verifyRewardCommitmentV2(rewardCommitmentToken, options.rewardCommitment);
+  const reward = rewardSnapshot.value === undefined
+    ? await verifyRewardCommitmentV2(undefined, options.rewardCommitment)
+    : await verifyRewardCommitmentV2Snapshot(rewardSnapshot.value, options.rewardCommitment);
   errors.push(...reward.errors);
   warnings.push(...reward.warnings);
   if (!reward.accepted || rewardSnapshot.error || rewardSnapshot.value === undefined || spendSnapshot.error || spendSnapshot.value === undefined) {
