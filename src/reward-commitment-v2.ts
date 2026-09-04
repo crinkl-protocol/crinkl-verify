@@ -27,6 +27,7 @@ const CHECKPOINT_PROFILE = "configured-checkpoint-root/v1" as const;
 const CHECKPOINT_PROTOCOL_VERSION = "1.0.0-rc.1";
 const MAX_SUFFIX_EVENTS = 128;
 const MAX_AUTHORITY_RECORDS = 256;
+const MAX_MERKLE_SIBLINGS = 64;
 const encoder = new TextEncoder();
 
 function object(value: JsonValue | undefined): { readonly [key: string]: JsonValue } | undefined {
@@ -346,7 +347,7 @@ function parseToken(input: JsonValue, result: RewardCommitmentV2VerificationResu
   const proof = object(token.proof as JsonValue);
   const proofLeaf = proof ? object(proof.leaf as JsonValue) : undefined;
   const siblings = proof ? array(proof.siblings as JsonValue) : undefined;
-  if (!proof || !isNonEmptyString(proof.batchId) || !proofLeaf || !HASH.test(String(proof.leafHash)) || !siblings || !siblings.every((sibling) => typeof sibling === "string" && HASH.test(sibling))) {
+  if (!proof || !isNonEmptyString(proof.batchId) || !proofLeaf || !HASH.test(String(proof.leafHash)) || !siblings || siblings.length > MAX_MERKLE_SIBLINGS || !siblings.every((sibling) => typeof sibling === "string" && HASH.test(sibling))) {
     invalid(result, "$.proof", "proof must contain batchId, leaf, a lowercase SHA-256 leafHash, and sibling hashes.");
   } else if (proof.batchId !== batch?.batchId) invalid(result, "$.proof.batchId", "proof.batchId must equal batch.batchId.");
   let rewardInclusionProof: RewardCommitmentTokenV2["rewardInclusionProof"] | undefined;
@@ -356,7 +357,7 @@ function parseToken(input: JsonValue, result: RewardCommitmentV2VerificationResu
     const rip = object(token.rewardInclusionProof as JsonValue);
     const ripLeaf = rip ? object(rip.leaf as JsonValue) : undefined;
     const ripSiblings = rip ? array(rip.siblings as JsonValue) : undefined;
-    if (!rip || !isNonEmptyString(rip.batchId) || !isNonEmptyString(rip.recipientId) || !HASH.test(String(rip.rewardEventsRoot)) || !ripLeaf || !exactlyKeys(ripLeaf, ["spendId", "rewardEventHash"]) || !isNonEmptyString(ripLeaf.spendId) || !HASH.test(String(ripLeaf.rewardEventHash)) || !HASH.test(String(rip.leafHash)) || !ripSiblings || !ripSiblings.every((sibling) => typeof sibling === "string" && HASH.test(sibling))) {
+    if (!rip || !isNonEmptyString(rip.batchId) || !isNonEmptyString(rip.recipientId) || !HASH.test(String(rip.rewardEventsRoot)) || !ripLeaf || !exactlyKeys(ripLeaf, ["spendId", "rewardEventHash"]) || !isNonEmptyString(ripLeaf.spendId) || !HASH.test(String(ripLeaf.rewardEventHash)) || !HASH.test(String(rip.leafHash)) || !ripSiblings || ripSiblings.length > MAX_MERKLE_SIBLINGS || !ripSiblings.every((sibling) => typeof sibling === "string" && HASH.test(sibling))) {
       addError(result, "REWARD_INCLUSION_PROOF_INVALID", "rewardInclusionProof is malformed.", "input", "$.rewardInclusionProof");
     } else {
       rewardInclusionProof = { batchId: rip.batchId as string, recipientId: rip.recipientId as string, rewardEventsRoot: rip.rewardEventsRoot as string, leaf: { spendId: ripLeaf.spendId as string, rewardEventHash: ripLeaf.rewardEventHash as string }, leafHash: rip.leafHash as string, siblings: ripSiblings as string[] };

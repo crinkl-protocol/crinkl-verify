@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { verifyRewardCommitmentV2 } from "../dist/index.js";
 
 const vectorPath = resolve(
-  process.env.CRINKL_PROTOCOL_DIR ?? "/mnt/worktrees/crinkl-protocol-authority-checkpoint-protocol-conformance-repair-20260904",
+  process.env.CRINKL_PROTOCOL_DIR ?? "/mnt/worktrees/crinkl-protocol-authority-checkpoint-presentation-v2-proof-bound-20260904",
   "conformance/authority-checkpoint/v1/vectors/authority-checkpoint-reward-v2.v1.json"
 );
 const hasAuthorityCheckpointVectors = existsSync(vectorPath);

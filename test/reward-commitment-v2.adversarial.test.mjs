@@ -11,7 +11,7 @@ import { verifyRewardCommitmentV2 } from "../dist/index.js";
 if (!ed25519.etc.sha512Sync) ed25519.etc.sha512Sync = (...messages) => sha512(ed25519.etc.concatBytes(...messages));
 
 const vectorPath = resolve(
-  process.env.CRINKL_PROTOCOL_DIR ?? "/mnt/worktrees/crinkl-protocol-authority-checkpoint-protocol-conformance-repair-20260904",
+  process.env.CRINKL_PROTOCOL_DIR ?? "/mnt/worktrees/crinkl-protocol-authority-checkpoint-presentation-v2-proof-bound-20260904",
   "conformance/authority-checkpoint/v1/vectors/authority-checkpoint-reward-v2.v1.json"
 );
 const hasVectors = existsSync(vectorPath);
@@ -224,4 +224,18 @@ test("requires a valid reward inclusion proof under the aggregate leaf root", { 
   assert.equal(tamperedResult.accepted, false);
   assert.equal(tamperedResult.rewardInclusionProofValid, false);
   assert.ok(tamperedResult.errors.some((error) => error.code === "REWARD_INCLUSION_PROOF_INVALID"));
+});
+
+test("bounds both V2 Merkle sibling arrays before checkpoint trust or proof walking", { skip: !hasVectors }, async () => {
+  const base = vectors.positiveCases[0];
+  for (const path of ["proof", "rewardInclusionProof"]) {
+    const token = clone(base.rewardCommitmentToken);
+    token[path].siblings = Array.from({ length: 65 }, () => "0".repeat(64));
+    let trusted = false;
+    const result = await verifyRewardCommitmentV2(token, {
+      authorityCheckpointTrust: () => { trusted = true; return true; }
+    });
+    assert.equal(result.accepted, false, path);
+    assert.equal(trusted, false, path);
+  }
 });
