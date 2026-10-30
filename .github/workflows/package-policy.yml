@@ -1,0 +1,19 @@
+name: package-policy
+on:
+  pull_request:
+    paths: ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc', '.github/workflows/package-*']
+  workflow_dispatch:
+jobs:
+  locked-install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: corepack enable
+      - run: python3 .github/workflows/package-age.py pnpm
+      - run: corepack pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile
